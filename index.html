@@ -1611,7 +1611,7 @@ function vpanel() {
 function frame(ts) {
   var dt = lastTs ? (ts - lastTs) / 1000 : 0;
   lastTs = ts;
-  if (speed > 0) {
+  if (speed > 0 && $('ask').hidden) {
     acc += Math.min(dt, 0.25) * 10 * speed;
     var n = Math.floor(acc);
     acc -= n;
