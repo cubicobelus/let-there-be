@@ -452,6 +452,47 @@ def main():
             return all(x >= 20 for x in r), f"hum_tune in 1 year with all packs active: {r}"
         check("14 small behaviours still happen with every pack active", t14)
 
+        # 37. a never-ending behaviour cannot starve the island
+        def t37():
+            r = page.evaluate("""() => {
+              const busy = { id: 'busy', title: 'Busy', narration: 'They vote.',
+                behaviors: [{ id: 'vote_forever', label: 'Voting', priority: 90, duration: 1, target: { kind: 'self' }, do: [] }],
+                drawback: { label: 'Votes', text: 'Endless voting.', rules: ['vote_forever'] } };
+              return [1, 2, 3].map(seed => {
+                const base = LTB.createSim({ seed }); base.tick(1440 * 3);
+                const s = LTB.createSim({ seed }); const ok = s.applyPack(busy).ok; s.tick(1440 * 3);
+                const alive = x => x.state.villagers.filter(v => v.alive).length;
+                return { ok, alive: alive(s), base: alive(base), votes: s.state.stats.behaviors.vote_forever || 0 };
+              });
+            }""")
+            # nobody starves; births may stop, because voting crowds out family life
+            good = all(x["ok"] and x["alive"] >= 45 and x["votes"] > 0 for x in r)
+            return good, str(r)
+        check("37 a never-ending high-priority behaviour cannot starve the island", t37)
+
+        # 38. repairs fix one-meaning slips and nothing else
+        def t38():
+            r = page.evaluate("""() => {
+              const s = LTB.createSim({ seed: 2 });
+              const p = { id: 'frogs2', title: 'Frogs', narration: 'Frogs.',
+                gifts: [{ item: 'frog', amount: 1 }],
+                behaviors: [{ id: 'croak', label: 'Croaking', priority: 70, duration: 2, target: { kind: 'self' }, do: [{ item: 'frog', by: 1 }] },
+                            { id: 'nap', label: 'Napping', priority: 10, duration: 2, target: { kind: 'self' }, do: [] }],
+                drawback: { label: 'Noise', text: 'Croaking.', rules: ['nothing_here'] } };
+              const before = LTB.validatePack(JSON.parse(JSON.stringify(p)), s).ok;
+              const notes = LTB.repairPack(p, s);
+              const after = LTB.validatePack(p, s);
+              const bad = { id: 'x', title: 'x', narration: 'x', behaviours: [] };
+              const badNotes = LTB.repairPack(bad, s);
+              return { before, after: after.ok, errs: after.errors, notes, rules: p.drawback.rules, croakCd: p.behaviors[0].cooldownDays,
+                       napCd: p.behaviors[1].cooldownDays === undefined, items: (p.items || []).map(i => i.id),
+                       badStill: !LTB.validatePack(bad, s).ok, badNotes };
+            }""")
+            good = (not r["before"] and r["after"] and r["items"] == ["frog"] and r["rules"] == ["croak", "nap"]
+                    and r["croakCd"] == 1 and r["napCd"] and r["badStill"] and len(r["notes"]) == 3)
+            return good, str(r)
+        check("38 repairs declare missing items, link drawbacks, rest busy behaviours, and leave real errors", t38)
+
         # 11. speed
         def t11():
             r = page.evaluate("""() => {

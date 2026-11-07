@@ -246,7 +246,7 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
     "id": "farming", "title": "Farming", "narration": "You invent farming. The villagers bury perfectly good berries in rows and wait, which is apparently the whole idea.",
     "objects": [
       {"id": "farm_field", "label": "Farm plot", "place": {"count": 20, "near": "anywhere"},
-       "stock": {"item": "food", "amount": 3, "max": 3, "regrowPerDay": 0}, "respawn": {"perDay": 2.4, "max": 28},
+       "stock": {"item": "food", "amount": 3, "max": 3, "regrowPerDay": 0}, "respawn": {"perDay": 1.8, "max": 28},
        "sprite": {"palette": ["#6b4a2b", "#8a6a3a", "#7ccf4a"], "rows": ["........", "..2..2..", ".222.222", "..2..2..", "00000000", "11111111", "00000000", "11111111"]}},
       {"id": "farm_scarecrow", "label": "Scarecrow", "place": {"count": 3, "near": "anywhere"},
        "sprite": {"palette": ["#c79a5b", "#7a4b24", "#d23a2a", "#222222"], "rows": ["..0000..", "..0330..", "...00...", "1111111.", "..1221..", "..1221..", "...11...", "...11..."]}}
@@ -953,12 +953,12 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
 <script type="text/plain" id="ai-instructions">
 # AI instructions
 
-You are the world engine of a funny, chaotic island game. The player types a command and you change a small island of villagers by replying with one JSON object called a pack. Reply with only that JSON.
+You are the world engine of a funny, chaotic island game. The player types a command and you change a small island of villagers by replying with one JSON object called a pack. Reply with only that JSON. Use the field names exactly as written below.
 
 Take the command literally. A clear command gets what the player meant. A vague one gets a funny, literal reading. Every pack must include a real drawback connected to the gift and proportionate to it. Keep narration to one or two funny sentences.
 
 ## Time
-120 ticks make a day and 12 days make a year. The last third of each day is night. Villagers pick a new behaviour about every 10 ticks.
+120 ticks make a day and 12 days make a year. The last third of each day is night. Villagers pick a new behavior about every 10 ticks.
 
 ## Pack fields
 All are optional except `id`, `title`, `narration` and `drawback`.
@@ -980,14 +980,14 @@ All are optional except `id`, `title`, `narration` and `drawback`.
   - `respawn`: `{perDay, max}` makes new copies appear on empty land up to `max`.
   - `sprite`: `{palette: ["#rrggbb", ...], rows: ["01.", ...]}`. Square, 8 to 16 rows. Each character is a palette index, and `.` is transparent.
 - `behaviors`: see below.
-- `drawback`: `{label, text, rules}`. `rules` lists at least one id of a behaviour or object in this pack that causes the drawback.
+- `drawback`: `{label, text, rules}`. `rules` lists at least one id of a behavior or object in this pack that causes the drawback.
 
-## Behaviours
+## Behaviors
 `{id, label, who, when, priority, urgency, target, duration, cooldownDays, do}`
 
 - `who`: optional `{trait, notTrait, role, notRole}`.
 - `when`: a list of conditions that must all be true.
-- `priority`: 0 to 100. The highest allowed behaviour wins. `urgency`: `{need, scale}` adds that need's value times `scale`. A behaviour also gains up to 40 points the longer a villager goes without doing it, but this can only lift it to a score of 60, so small pleasures still happen and starving villagers still eat. Use `chance` and `cooldownDays` to keep rare things rare.
+- `priority`: 0 to 100. The highest allowed behavior wins. `urgency`: `{need, scale}` adds that need's value times `scale`. A behavior also gains up to 40 points the longer a villager goes without doing it, but this can only lift it to a score of 60, so small pleasures still happen and starving villagers still eat. Use `chance` and `cooldownDays` to keep rare things rare. Give every behavior a `when` or a `cooldownDays`, or villagers will do nothing else. Villagers who are starving or collapsing always look after themselves first.
 - `target`: where to go first.
   - `{kind: "self"}` acts on the spot.
   - `{kind: "wander"}` walks somewhere nearby.
@@ -1027,7 +1027,7 @@ Each may also be used in `filter`, where it is checked on the target.
 
 ## Limits
 A pack outside these limits is rejected, and the world does not change.
-- Whole pack: at most 30000 bytes, 6 needs, 12 items, 8 traits, 6 roles, 10 objects, 12 behaviours and 6 gifts.
+- Whole pack: at most 30000 bytes, 6 needs, 12 items, 8 traits, 6 roles, 10 objects, 12 behaviors and 6 gifts.
 - Text: title up to 80 characters, narration 500, labels 60, drawback text 300, log lines 200.
 - Needs: `start` and `damageAt` 0 to 100, `perDay` -200 to 200, `damagePerDay` 0 to 200.
 - Traits and gifts: `share` 0 to 1. Gifts: `amount` a whole number from 1 to 100.
@@ -1036,7 +1036,7 @@ A pack outside these limits is rejected, and the world does not change.
 - Objects: `place.count` a whole number from 0 to 200, `stock` values 0 to 1000, `lifetimeDays` 0.05 to 1000, `respawn.perDay` 0 to 200, `respawn.max` a whole number from 0 to 300.
 - Aura and hurts: `radius` 0 to 30. Aura `perDay` -200 to 200, hurts `perDay` 0 to 500.
 - Spread: `chancePerDay` 0 to 10, `radius` 0 to 30, `onto` 1 to 10 object ids.
-- Behaviours: `priority` 0 to 100, `duration` 0 to 500, `cooldownDays` 0 to 1000, urgency `scale` -10 to 10, `maxRange` 0 to 500, at most 12 effects and 10 conditions each.
+- Behaviors: `priority` 0 to 100, `duration` 0 to 500, `cooldownDays` 0 to 1000, urgency `scale` -10 to 10, `maxRange` 0 to 500, at most 12 effects and 10 conditions each.
 - Effects: `by` on needs and health -200 to 200, on items -1000 to 1000. `feeling` -200 to 200. Any `radius` 0 to 30.
 
 ## What already exists
@@ -1050,7 +1050,7 @@ The current world summary follows these instructions. Refer to anything it lists
 // SIMULATION (pure: no DOM access, no Math.random)
 // ===================================================================
 var W = 64, H = 44, TPD = 120, DPY = 12, NIGHT_START = 80, SPEED = 0.12;
-var STALE_PER_DAY = 4, STALE_MAX = 40, STALE_CEILING = 60;
+var STALE_PER_DAY = 4, STALE_MAX = 40, STALE_CEILING = 60, SURVIVAL_BONUS = 100;
 var PACKS = {};
 var ALIASES = {};
 var AI_INSTRUCTIONS = '';
@@ -1084,6 +1084,49 @@ function newWorld() {
 }
 
 // ---------- validation ----------
+// Fixes for slips with only one sensible meaning, applied to AI answers before validation.
+// Returns a list of plain notes; the validator stays the judge of everything else.
+var ITEM_KEYS = ['item', 'fromStock', 'toStock', 'transfer'];
+function repairPack(pack, ws) {
+  var notes = [];
+  if (!isObj(pack)) return notes;
+  var world = ws && ws.world ? ws.world : null;
+  var known = new Set(world ? Object.keys(world.items) : ['food']);
+  (Array.isArray(pack.items) ? pack.items : []).forEach(function (i) { if (isObj(i)) known.add(i.id); });
+  var used = new Set();
+  var walk = function (x, key) {
+    if (Array.isArray(x)) { x.forEach(function (y) { walk(y, key); }); return; }
+    if (!isObj(x)) return;
+    Object.keys(x).forEach(function (k) {
+      if (k === 'items' && x === pack) return;
+      var v = x[k];
+      if (typeof v === 'string' && (ITEM_KEYS.indexOf(k) >= 0 || (k === 'item' && key === 'stock'))) used.add(v);
+      walk(v, k);
+    });
+  };
+  walk(pack, '');
+  var missing = Array.from(used).filter(function (u) { return !known.has(u) && /^[a-z][a-z0-9_]{0,39}$/.test(u); }).sort();
+  if (missing.length && (pack.items === undefined || Array.isArray(pack.items))) {
+    pack.items = (pack.items || []).concat(missing.map(function (m) { return { id: m, label: m.charAt(0).toUpperCase() + m.slice(1).replace(/_/g, ' ') }; }));
+    notes.push('declared ' + missing.join(', ') + ' as new items');
+  }
+  var own = [];
+  ['behaviors', 'objects'].forEach(function (k) { (Array.isArray(pack[k]) ? pack[k] : []).forEach(function (o) { if (isObj(o) && typeof o.id === 'string') own.push(o.id); }); });
+  var d = pack.drawback;
+  if (isObj(d) && own.length && !(Array.isArray(d.rules) && d.rules.some(function (r) { return own.indexOf(r) >= 0; }))) {
+    d.rules = own.slice();
+    notes.push('linked the drawback to the rules in this answer');
+  }
+  var busy = [];
+  (Array.isArray(pack.behaviors) ? pack.behaviors : []).forEach(function (b) {
+    if (isObj(b) && typeof b.priority === 'number' && b.priority > 30 && !(Array.isArray(b.when) && b.when.length) && b.cooldownDays === undefined) {
+      b.cooldownDays = 1; busy.push(b.id);
+    }
+  });
+  if (busy.length) notes.push('gave ' + busy.join(', ') + ' a one-day rest, so villagers still do other things');
+  return notes;
+}
+
 function validatePack(pack, ws) {
   var world = (ws && ws.world) ? ws.world : (ws || newWorld());
   if (!world.packs) world.packs = [];
@@ -1988,6 +2031,7 @@ function createSim(opts) {
   }
 
   function decide(v) {
+    var hurting = world.needList.some(function (n) { return (v.needs[n.id] || 0) >= n.damageAt; });
     var t = state.tick, cands = [], i;
     var bl = world.behList;
     for (i = 0; i < bl.length; i++) {
@@ -2005,6 +2049,8 @@ function createSim(opts) {
       // things a villager has not done for a while grow more appealing, up to a ceiling
       var since = (t - (v.last[b.id] === undefined ? b.addedAt : v.last[b.id])) / TPD;
       sc = Math.max(sc, Math.min(sc + Math.min(STALE_MAX, since * STALE_PER_DAY), STALE_CEILING));
+      // a villager whose needs are hurting them falls back on the island's original habits first
+      if (hurting && b.pack === 'base') sc += SURVIVAL_BONUS;
       cands.push({ s: sc, i: i, b: b });
     }
     cands.sort(function (p, q) { return q.s - p.s || p.i - q.i; });
@@ -2468,7 +2514,7 @@ PACKS = JSON.parse(document.getElementById('packs-data').textContent);
 ALIASES = JSON.parse(document.getElementById('aliases-data').textContent);
 AI_INSTRUCTIONS = document.getElementById('ai-instructions').textContent.replace(/^\n+|\n+$/g, '');
 var LTB = window.LTB = { createSim: createSim, validatePack: validatePack, PACKS: PACKS, AI_INSTRUCTIONS: AI_INSTRUCTIONS,
-  SCENARIOS: SCENARIOS, MAX_VILLAGERS: MAX_VILLAGERS, MAX_WORDS: MAX_WORDS, ALIASES: ALIASES, matchCommand: matchCommand,
+  SCENARIOS: SCENARIOS, MAX_VILLAGERS: MAX_VILLAGERS, MAX_WORDS: MAX_WORDS, ALIASES: ALIASES, matchCommand: matchCommand, repairPack: repairPack,
   library: function () { return Object.keys(PACKS).filter(function (k) { return k !== 'base'; }); } };
 
 // ===================================================================
@@ -2793,8 +2839,10 @@ function applyAnswer(text) {
   if (!String(text).trim()) { showErrors(['Paste the answer first.']); return; }
   var p = parseAnswer(text);
   if (p.error) { showErrors([p.error]); return; }
+  var fixes = repairPack(p.value, sim);
   var res = sim.applyPack(p.value);
   if (!res.ok) { showErrors(res.errors); return; }
+  if (fixes.length) say('Small fixes to that answer: ' + fixes.join('; ') + '.', 'note');
   sim.useCommand();
   $('ask').hidden = true;
   syncLog(); syncPacks();
