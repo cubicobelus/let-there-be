@@ -310,6 +310,73 @@ def main():
                     f"img elements={imgs}, __pwned={pwned}, markup shown as text={shown}, source clean={clean}")
         check("10 safety: pack text stays text, no eval or new Function", t10)
 
+        # 12. gifts and remote actions
+        def t12():
+            r = page.evaluate("""() => {
+              const pack = {
+                id: 'zappers', title: 'Zappers', narration: 'Zap.',
+                items: [{ id: 'zapper', label: 'Zapper' }],
+                gifts: [{ item: 'zapper', amount: 2 }],
+                objects: [{ id: 'scorch', label: 'Scorch mark', color: '#222222', place: { count: 0, near: 'anywhere' } }],
+                behaviors: [{ id: 'zap', label: 'Zapping', when: [{ item: 'zapper', op: '>=', value: 1 }], priority: 99, duration: 1,
+                  target: { kind: 'villager', pick: 'random', remote: true },
+                  do: [{ spawn: 'scorch', at: 'target' }, { item: 'zapper', by: -1 }] }],
+                drawback: { label: 'Scorch marks', text: 'Everything is scorched.', rules: ['zap'] }
+              };
+              const s = LTB.createSim({ seed: 5 });
+              const res = s.applyPack(pack);
+              const v = s.state.villagers;
+              const gifted = v.filter(x => x.items.zapper === 2).length;
+              s.tick(40);
+              const zaps = s.state.stats.behaviors.zap || 0;
+              const walkers = s.state.villagers.filter(x => x.cur && x.cur.b === 'zap' && x.cur.phase === 'move').length;
+              return { ok: res.ok, errs: res.errors, gifted, zaps, marks: s.state.objects.filter(o => o.def === 'scorch').length, walkers };
+            }""")
+            ok = r["ok"] and r["gifted"] == 50 and r["zaps"] > 0 and r["marks"] == r["zaps"] and r["walkers"] == 0
+            return ok, str(r)
+        check("12 gifts reach everyone and remote actions need no walking", t12)
+
+        # 13. new validation and stated limits
+        def t13():
+            r = page.evaluate("""() => {
+              const db = { label: 'x', text: 'x', rules: ['b1'] };
+              const beh = (over) => Object.assign({ id: 'b1', label: 'x', priority: 1, duration: 1, target: { kind: 'self' }, do: [] }, over);
+              const bad = [
+                { id: 'a', title: 'a', narration: 'a', drawback: db, behaviors: [beh()], gifts: [{ item: 'nothing', amount: 1 }] },
+                { id: 'a', title: 'a', narration: 'a', drawback: db, behaviors: [beh()], gifts: [{ item: 'food', amount: 0 }] },
+                { id: 'a', title: 'a', narration: 'a', drawback: db, behaviors: [beh()], gifts: [{ item: 'food', amount: 1, share: 2 }] },
+                { id: 'a', title: 'a', narration: 'a', drawback: db, behaviors: [beh({ target: { kind: 'self', remote: true } })] },
+                { id: 'a', title: 'a', narration: 'a', drawback: db, behaviors: [beh({ target: { kind: 'villager', remote: 'yes' } })] },
+                { id: 'a', title: 'a', narration: 'a', drawback: db, behaviors: [beh({ do: [{ spawn: 'bush', at: 'target' }] })] },
+                { id: 'a', title: 'a', narration: 'a', drawback: db, behaviors: [beh({ target: { kind: 'villager' }, do: [{ spawn: 'bush', at: 'moon' }] })] },
+              ];
+              const s = LTB.createSim({ seed: 2 }), h = s.hash();
+              const accepted = bad.map((p, i) => s.applyPack(p).ok ? i : -1).filter(i => i >= 0);
+              const text = LTB.AI_INSTRUCTIONS;
+              const stated = ['## Limits', '`chancePerDay` 0 to 10', '`gifts`', '`remote: true`', 'up to 40 points'].filter(x => text.indexOf(x) < 0);
+              return { accepted, same: s.hash() === h, missing: stated };
+            }""")
+            return (not r["accepted"] and r["same"] and not r["missing"]), str(r)
+        check("13 new fields are validated and limits are in the AI instructions", t13)
+
+        # 14. small behaviours are not crowded out
+        def t14():
+            r = page.evaluate("""() => {
+              const small = { id: 'hum', title: 'Humming', narration: 'They hum.',
+                behaviors: [{ id: 'hum_tune', label: 'Humming', when: [{ chance: 0.08 }], priority: 16, duration: 8, cooldownDays: 1,
+                  target: { kind: 'self' }, do: [] }],
+                drawback: { label: 'Noise', text: 'It is annoying.', rules: ['hum_tune'] } };
+              return [1, 2, 3, 4, 5].map(sd => {
+                const s = LTB.createSim({ seed: sd });
+                ['unlock fire', 'introduce crime', 'make a government'].forEach(k => s.applyPack(LTB.PACKS[k]));
+                s.applyPack(small);
+                s.tick(1440);
+                return s.state.stats.behaviors.hum_tune || 0;
+              });
+            }""")
+            return all(x >= 20 for x in r), f"hum_tune in 1 year with all packs active: {r}"
+        check("14 small behaviours still happen with every pack active", t14)
+
         # 11. speed
         def t11():
             r = page.evaluate("""() => {

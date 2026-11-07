@@ -169,7 +169,7 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
   },
   "make a government": {
     "id": "government", "title": "Government", "narration": "You invent government. The most popular villager is immediately given a pile of other people's berries.",
-    "roles": [{"id": "chief", "label": "Chief", "count": 1, "pick": "popular", "reelectBelow": -5}],
+    "roles": [{"id": "chief", "label": "Chief", "count": 1, "pick": "popular", "reelectBelow": -12}],
     "objects": [
       {"id": "granary", "label": "Granary", "place": {"count": 1, "near": "center"}, "stock": {"item": "food", "amount": 10, "max": 200, "regrowPerDay": 0},
        "sprite": {"palette": ["#7a4b24", "#c79a5b", "#3a2412"], "rows": ["...00...", "..0000..", ".000000.", "01111110", "01122110", "01122110", "01122110", "00000000"]}}
@@ -186,7 +186,7 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
        "do": [{"fromStock": "food", "amount": 2}, {"event": "corruption", "radius": 8}, {"log": "{actor} took a little extra for official reasons."}]},
       {"id": "complain", "label": "Complaining about the chief", "who": {"notRole": "chief"}, "when": [{"memory": "corruption", "withinDays": 1}], "priority": 12,
        "target": {"kind": "self"}, "duration": 5, "cooldownDays": 2,
-       "do": [{"feeling": -6, "towards": {"role": "chief"}}]},
+       "do": [{"feeling": -4, "towards": {"role": "chief"}}]},
       {"id": "punish", "label": "Administering justice", "who": {"role": "chief"}, "when": [{"memory": "theft", "withinDays": 3}], "priority": 42,
        "target": {"kind": "villager", "pick": "memoryActor", "event": "theft"}, "duration": 5, "cooldownDays": 1,
        "do": [{"item": "food", "by": -2, "on": "target"}, {"health": -5, "on": "target"}, {"feeling": -10, "towards": "self"}, {"event": "justice", "radius": 8}, {"log": "{actor} fined {target} two berries and some dignity."}]}
@@ -211,6 +211,7 @@ All are optional except `id`, `title`, `narration` and `drawback`.
 - `id`, `title`, `narration`: strings. Ids use lowercase letters, digits and underscores, and must not clash with anything in the world.
 - `needs`: `{id, label, start, perDay, damageAt, damagePerDay}`. Values run 0 to 100 and rise by `perDay`. At or above `damageAt`, health falls by `damagePerDay`.
 - `items`: `{id, label}`.
+- `gifts`: `{item, amount, share}` hands that many of an item to villagers now. `share` is the fraction who get it, and defaults to everyone. The item must exist in the world or in `items`.
 - `traits`: `{id, label, share}`. `share` is the fraction of villagers who get it now.
 - `roles`: `{id, label, count, pick, reelectBelow}`. `pick` is `popular` or `random`. If average feeling towards a holder falls below `reelectBelow` (-100 to 100), or the holder dies, the role passes on and a `revolt` event fires.
 - `objects`: `{id, label, sprite, color, place, stock, aura, hurts, spread, lifetimeDays, respawn}`.
@@ -230,7 +231,7 @@ All are optional except `id`, `title`, `narration` and `drawback`.
 
 - `who`: optional `{trait, notTrait, role, notRole}`.
 - `when`: a list of conditions that must all be true.
-- `priority`: 0 to 100. The highest allowed behaviour wins. `urgency`: `{need, scale}` adds that need's value times `scale`.
+- `priority`: 0 to 100. The highest allowed behaviour wins. `urgency`: `{need, scale}` adds that need's value times `scale`. A behaviour also gains up to 40 points the longer a villager goes without doing it, but this can only lift it to a score of 60, so small pleasures still happen and starving villagers still eat. Use `chance` and `cooldownDays` to keep rare things rare.
 - `target`: where to go first.
   - `{kind: "self"}` acts on the spot.
   - `{kind: "wander"}` walks somewhere nearby.
@@ -238,6 +239,7 @@ All are optional except `id`, `title`, `narration` and `drawback`.
   - `{kind: "villager", filter, pick, maxRange, role}`. `role` limits it to holders of that role.
   - `{kind: "away", object}` runs from the nearest of that object.
   - `pick` is `nearest` or `random`, or for villagers `lowestFeeling`, or `memoryActor` with `event` naming the event to look up.
+  - `remote: true` on an object or villager target means act from where the villager stands, without walking there.
 - `duration`: ticks spent at the target before `do` runs.
 - `cooldownDays`: how long before this villager can use it again.
 - `do`: a list of effects.
@@ -256,15 +258,28 @@ Each may also be used in `filter`, where it is checked on the target.
 
 ## Effects
 `on` is `self` (the default) or `target`.
-- `{need, by, on}`, `{health, by, on}`, `{item, by, on}`
+- `{need, by, on}`, `{"health": -10, on}`, `{item, by, on}`
 - `{transfer: item, amount}` moves items from the target villager to the actor. A negative amount moves them from the actor to the target.
 - `{fromStock: item, amount}` moves items from the target object to the actor. `{toStock: item, amount}` moves them from the actor to the target object.
 - `{feeling, towards}` changes feelings by the `feeling` amount. `towards` is `target` (actor's feeling about the target), `self` (target's feeling about the actor), `both`, `nearby` (actor and villagers within `radius`, both ways) or `{role}` (actor's feeling about holders of that role).
 - `{event: eventType, radius}` records the event. The target and everyone within `radius` remember it, with the actor as the one who did it.
-- `{spawn: objectId}` places an object here. `{remove: "target"}` removes the target object.
+- `{spawn: objectId, at}` places an object. `at` is `self` (the default) or `target`. `{remove: "target"}` removes the target object.
 - `{world: variable, by}` changes a number stored on the world.
 - `{addTrait: id, on}`, `{removeTrait: id, on}`
 - `{log: "text"}` adds a line to the world log. `{actor}` and `{target}` become names.
+
+## Limits
+A pack outside these limits is rejected, and the world does not change.
+- Whole pack: at most 30000 bytes, 6 needs, 12 items, 8 traits, 6 roles, 10 objects, 12 behaviours and 6 gifts.
+- Text: title up to 80 characters, narration 500, labels 60, drawback text 300, log lines 200.
+- Needs: `start` and `damageAt` 0 to 100, `perDay` -200 to 200, `damagePerDay` 0 to 200.
+- Traits and gifts: `share` 0 to 1. Gifts: `amount` a whole number from 1 to 100.
+- Roles: `count` a whole number from 0 to 20, `reelectBelow` -100 to 100.
+- Objects: `place.count` a whole number from 0 to 200, `stock` values 0 to 1000, `lifetimeDays` 0.05 to 1000, `respawn.perDay` 0 to 200, `respawn.max` a whole number from 0 to 300.
+- Aura and hurts: `radius` 0 to 30. Aura `perDay` -200 to 200, hurts `perDay` 0 to 500.
+- Spread: `chancePerDay` 0 to 10, `radius` 0 to 30, `onto` 1 to 10 object ids.
+- Behaviours: `priority` 0 to 100, `duration` 0 to 500, `cooldownDays` 0 to 1000, urgency `scale` -10 to 10, `maxRange` 0 to 500, at most 12 effects and 10 conditions each.
+- Effects: `by` on needs and health -200 to 200, on items -1000 to 1000. `feeling` -200 to 200. Any `radius` 0 to 30.
 
 ## What already exists
 The current world summary follows these instructions. Refer to anything it lists by id. Event ids can be new, and may name events that no pack creates yet.
@@ -277,6 +292,7 @@ The current world summary follows these instructions. Refer to anything it lists
 // SIMULATION (pure: no DOM access, no Math.random)
 // ===================================================================
 var W = 64, H = 44, TPD = 120, DPY = 12, NIGHT_START = 80, SPEED = 0.12;
+var STALE_PER_DAY = 4, STALE_MAX = 40, STALE_CEILING = 60;
 var PACKS = {};
 var AI_INSTRUCTIONS = '';
 
@@ -357,7 +373,7 @@ function validatePack(pack, ws) {
     return v;
   };
 
-  keysOk(pack, ['id', 'title', 'narration', 'needs', 'items', 'traits', 'roles', 'objects', 'behaviors', 'drawback'], 'Pack');
+  keysOk(pack, ['id', 'title', 'narration', 'needs', 'items', 'gifts', 'traits', 'roles', 'objects', 'behaviors', 'drawback'], 'Pack');
   req(pack, ['id', 'title', 'narration'], 'Pack');
 
   var needsL = list(pack.needs, 6, 'needs', 'needs');
@@ -366,6 +382,7 @@ function validatePack(pack, ws) {
   var rolesL = list(pack.roles, 6, 'roles', 'roles');
   var objsL = list(pack.objects, 10, 'objects', 'objects');
   var behsL = list(pack.behaviors, 12, 'behaviors', 'behaviours');
+  var giftsL = list(pack.gifts, 6, 'gifts', 'gifts');
 
   // ids
   var seen = new Set();
@@ -422,6 +439,14 @@ function validatePack(pack, ws) {
     if (!isObj(n)) return;
     keysOk(n, ['id', 'label'], p); req(n, ['id', 'label'], p);
     if (hasOwn(n, 'label')) str(n.label, 60, p + '.label');
+  });
+  giftsL.forEach(function (n, i) {
+    var p = 'gifts[' + i + ']';
+    if (!isObj(n)) { err(p + ' must be an object.'); return; }
+    keysOk(n, ['item', 'amount', 'share'], p); req(n, ['item', 'amount'], p);
+    if (hasOwn(n, 'item')) ref(n.item, hasItem, 'item', p + '.item');
+    if (hasOwn(n, 'amount')) num(n.amount, 1, 100, p + '.amount', true);
+    if (hasOwn(n, 'share')) num(n.share, 0, 1, p + '.share');
   });
   traitsL.forEach(function (n, i) {
     var p = 'traits[' + i + ']';
@@ -647,7 +672,9 @@ function validatePack(pack, ws) {
         keysOk(e, ['event', 'radius'], p);
         evId(e.event, p + '.event'); if (has('radius')) num(e.radius, 0, 30, p + '.radius');
       } else if (has('spawn')) {
-        keysOk(e, ['spawn'], p); ref(e.spawn, hasObj, 'object', p + '.spawn');
+        keysOk(e, ['spawn', 'at'], p); ref(e.spawn, hasObj, 'object', p + '.spawn');
+        if (has('at') && e.at !== 'self' && e.at !== 'target') err(p + '.at must be "self" or "target".');
+        if (e.at === 'target' && tk !== 'villager' && tk !== 'object') err(p + ': "at": "target" needs a villager or object target.');
       } else if (has('remove')) {
         keysOk(e, ['remove'], p);
         if (e.remove !== 'target') err(p + '.remove must be "target".');
@@ -705,14 +732,16 @@ function validatePack(pack, ws) {
       else if (t.kind === 'self' || t.kind === 'wander') { keysOk(t, ['kind'], tp); tk = t.kind; }
       else if (t.kind === 'object') {
         tk = 'object';
-        keysOk(t, ['kind', 'object', 'filter', 'pick', 'maxRange'], tp); req(t, ['object'], tp);
+        keysOk(t, ['kind', 'object', 'filter', 'pick', 'maxRange', 'remote'], tp); req(t, ['object'], tp);
+        if (hasOwn(t, 'remote') && typeof t.remote !== 'boolean') err(tp + '.remote must be true or false.');
         if (hasOwn(t, 'object')) ref(t.object, hasObj, 'object', tp + '.object');
         condList(t.filter, tp + '.filter', 'obj', 10);
         if (hasOwn(t, 'pick') && t.pick !== 'nearest' && t.pick !== 'random') err(tp + '.pick must be "nearest" or "random" for an object target.');
         if (hasOwn(t, 'maxRange')) num(t.maxRange, 0, 500, tp + '.maxRange');
       } else if (t.kind === 'villager') {
         tk = 'villager';
-        keysOk(t, ['kind', 'filter', 'pick', 'maxRange', 'role', 'event'], tp);
+        keysOk(t, ['kind', 'filter', 'pick', 'maxRange', 'role', 'event', 'remote'], tp);
+        if (hasOwn(t, 'remote') && typeof t.remote !== 'boolean') err(tp + '.remote must be true or false.');
         condList(t.filter, tp + '.filter', 'vil', 10);
         if (hasOwn(t, 'pick') && ['nearest', 'random', 'lowestFeeling', 'memoryActor'].indexOf(t.pick) < 0) err(tp + '.pick must be nearest, random, lowestFeeling or memoryActor.');
         if (t.pick === 'memoryActor') { if (!hasOwn(t, 'event')) err(tp + ': "memoryActor" needs an "event".'); else evId(t.event, tp + '.event'); }
@@ -875,7 +904,7 @@ function createSim(opts) {
       state.villagers.push({
         id: i, name: name, x: (tile % W) + 0.2 + rng() * 0.6, y: ((tile / W) | 0) + 0.2 + rng() * 0.6,
         alive: true, health: 100, needs: dict(), items: dict(), traits: dict(), roles: [], feel: dict(),
-        memories: [], cd: dict(), cur: null
+        memories: [], cd: dict(), last: dict(), cur: null
       });
     }
   }
@@ -1055,13 +1084,16 @@ function createSim(opts) {
       if (v.cd[b.id] > t) continue;
       if (!testAll(b.when, v, v)) continue;
       var sc = b.priority + (b.urgency ? (v.needs[b.urgency.need] || 0) * b.urgency.scale : 0);
+      // things a villager has not done for a while grow more appealing, up to a ceiling
+      var since = (t - (v.last[b.id] === undefined ? b.addedAt : v.last[b.id])) / TPD;
+      sc = Math.max(sc, Math.min(sc + Math.min(STALE_MAX, since * STALE_PER_DAY), STALE_CEILING));
       cands.push({ s: sc, i: i, b: b });
     }
     cands.sort(function (p, q) { return q.s - p.s || p.i - q.i; });
     for (i = 0; i < cands.length; i++) {
       var tg = resolveTarget(v, cands[i].b);
       if (tg) {
-        v.cur = { b: cands[i].b.id, label: cands[i].b.label, tg: tg, phase: 'move', wait: cands[i].b.duration, stuck: 0, mt: 0 };
+        v.cur = { b: cands[i].b.id, label: cands[i].b.label, tg: tg, phase: cands[i].b.target.remote ? 'wait' : 'move', wait: cands[i].b.duration, stuck: 0, mt: 0 };
         return;
       }
     }
@@ -1145,7 +1177,8 @@ function createSim(opts) {
         }
         got.forEach(function (id) { if (vv[id].alive && id !== a.id) remember(vv[id], e.event, a.id); });
       } else if (hasOwn(e, 'spawn')) {
-        if (world.objects[e.spawn] && land(a.x, a.y)) createObject(e.spawn, a.x, a.y);
+        var at = e.at === 'target' ? (tv || to || a) : a;
+        if (world.objects[e.spawn] && land(at.x, at.y)) createObject(e.spawn, at.x, at.y);
       } else if (hasOwn(e, 'remove')) {
         if (to) removeObject(to);
       } else if (hasOwn(e, 'world')) {
@@ -1200,12 +1233,13 @@ function createSim(opts) {
     }
     c.wait--;
     if (c.wait > 0) return;
-    if (tv) {
+    var b = world.behaviors[c.b];
+    if (tv && !b.target.remote) {
       var ex = tv.x - v.x, ey = tv.y - v.y;
       if (ex * ex + ey * ey > 16) { v.cur = null; return; }
     }
-    var b = world.behaviors[c.b];
     v.cur = null;
+    v.last[b.id] = state.tick;
     runEffects(b.do, v, tv, to);
     state.stats.behaviors[b.id] = (state.stats.behaviors[b.id] || 0) + 1;
     if (b.cooldownDays) v.cd[b.id] = state.tick + b.cooldownDays * TPD;
@@ -1338,6 +1372,12 @@ function createSim(opts) {
       vs.forEach(function (v) { v.needs[n.id] = n.start; });
     });
     (p.items || []).forEach(function (it) { world.items[it.id] = it; });
+    (p.gifts || []).forEach(function (g) {
+      var al = vs.filter(function (v) { return v.alive; });
+      for (i = al.length - 1; i > 0; i--) { var j = rint(i + 1), tmp = al[i]; al[i] = al[j]; al[j] = tmp; }
+      var k = Math.round((g.share === undefined ? 1 : g.share) * al.length);
+      for (i = 0; i < k; i++) al[i].items[g.item] = (al[i].items[g.item] || 0) + g.amount;
+    });
     (p.traits || []).forEach(function (tr) {
       world.traits[tr.id] = tr;
       var al = vs.filter(function (v) { return v.alive; });
@@ -1358,7 +1398,7 @@ function createSim(opts) {
       for (var c = 0; c < cnt; c++) placeObject(o);
     });
     (p.behaviors || []).forEach(function (b) {
-      b.pack = p.id;
+      b.pack = p.id; b.addedAt = state.tick;
       world.behaviors[b.id] = b; world.behList.push(b);
     });
     world.packs.push({ id: p.id, title: p.title, narration: p.narration, drawback: p.drawback || null });
