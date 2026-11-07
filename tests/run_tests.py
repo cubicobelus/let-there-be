@@ -291,8 +291,8 @@ def main():
               add('oversized place.count', p => { p.objects = [{ id: 'bigthing', label: 'Big', color: '#ffffff', place: { count: 201, near: 'anywhere' } }]; }, /count/);
               add('non-finite number', p => { p.behaviors[0].priority = Infinity; }, /finite/i);
               add('NaN number', p => { p.behaviors[0].duration = NaN; }, /finite/i);
-              add('bad sprite row', p => { p.objects = [{ id: 'sprited', label: 'Sprited', sprite: { palette: ['#000000'], rows: ['00000000','00000000','00000000','00000000','00000000','00000000','00000000','0000000'] } }]; p.drawback.rules = ['sprited']; }, /sprite/i);
-              add('bad palette index', p => { p.objects = [{ id: 'sprited', label: 'Sprited', sprite: { palette: ['#000000'], rows: ['00000000','00000000','00000000','00000000','00000000','00000000','00000000','00000009'] } }]; p.drawback.rules = ['sprited']; }, /palette index/i);
+              add('drawn sprite is no longer a field', p => { p.objects = [{ id: 'sprited', label: 'Sprited', sprite: { palette: ['#000000'], rows: ['0'] } }]; p.drawback.rules = ['sprited']; }, /sprite/i);
+              add('looksLike must be text', p => { p.objects = [{ id: 'sprited', label: 'Sprited', looksLike: 7 }]; p.drawback.rules = ['sprited']; }, /looksLike/);
               add('unknown top-level field', p => { p.script = 'x'; }, /unknown field/i);
               add('not an object', () => {}, /object/i);
               cases['not an object'].p = [1, 2];
@@ -889,7 +889,7 @@ def main():
         # 29. every pack is valid, complete and uses ids nobody else uses
         def t29():
             r = page.evaluate("""() => {
-              const out = { bad: [], dupes: [], noSprite: [], n: 0 };
+              const out = { bad: [], dupes: [], noSprite: [], hasSprite: [], n: 0 };
               const seen = new Map();
               const keys = LTB.library();
               out.n = keys.length;
@@ -905,13 +905,14 @@ def main():
                   if (seen.has(id)) out.dupes.push(id + ' in ' + seen.get(id) + ' and ' + k); else seen.set(id, k);
                 }
                 for (const o of (p.objects || [])) {
-                  if (!o.sprite || o.sprite.rows.length !== 8 || o.sprite.rows.some(r => r.length !== 8)) out.noSprite.push(k + '/' + o.id);
+                  if (Object.prototype.hasOwnProperty.call(o, 'sprite')) out.hasSprite.push(k + '/' + o.id);
+                  if (LTB.spriteNameFor(o) === 'mystery') out.noSprite.push(k + '/' + o.id);
                 }
               }
               return out;
             }""")
-            ok = r["n"] == 25 and not r["bad"] and not r["dupes"] and not r["noSprite"]
-            return ok, f"{r['n']} commands, problems {r['bad'][:2]}, duplicate ids {r['dupes'][:2]}, objects without an 8x8 sprite {r['noSprite'][:2]}"
+            ok = r["n"] == 25 and not r["bad"] and not r["dupes"] and not r["noSprite"] and not r["hasSprite"]
+            return ok, f"{r['n']} commands, problems {r['bad'][:2]}, duplicate ids {r['dupes'][:2]}, objects on the mystery sprite {r['noSprite'][:2]}, objects with a drawn sprite {r['hasSprite'][:2]}"
         check("29 library: 25 commands, all valid, each with a drawback and narration, no duplicate ids", t29)
 
         # 30. each pack alone: no exceptions, behaviours run, people survive
@@ -1143,6 +1144,125 @@ def main():
             hygiene = ("—" not in src and "–" not in src and not re.search(r"[A-Za-z]:\\Users", src) and not re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", src))
             return r["n"] >= 80 and not r["dup"] and not r["tooLong"] and hygiene, f"{r['n']} narration and log lines, repeats {r['dup'][:2]}, source hygiene {hygiene}"
         check("36 library: every narration and log line is different, and the source has no dashes, paths or addresses", t36)
+
+        # 39. sprites: the set is well formed and names resolve sensibly
+        def t39():
+            r = page.evaluate("""() => {
+              const S = LTB.SPRITES, bad = [];
+              for (const [n, s] of Object.entries(S)) {
+                if (!Array.isArray(s.rows) || s.rows.length !== 16 || s.rows.some(x => typeof x !== 'string' || x.length !== 16)) { bad.push(n + ': not 16x16'); continue; }
+                if (!Array.isArray(s.palette) || s.palette.length < 1 || s.palette.length > 16 || !s.palette.every(c => /^#[0-9a-f]{6}$/.test(c))) bad.push(n + ': palette');
+                for (const row of s.rows) for (const ch of row) { if (ch !== '.' && !(/^[0-9a-f]$/.test(ch) && parseInt(ch, 16) < s.palette.length)) bad.push(n + ': index ' + ch); }
+                if (!Array.isArray(s.tags) || !s.tags.every(x => typeof x === 'string')) bad.push(n + ': tags');
+              }
+              const f = LTB.spriteNameFor;
+              const libMiss = [];
+              for (const k of LTB.library().concat(['base'])) for (const o of (LTB.PACKS[k].objects || [])) if (f(o) === 'mystery') libMiss.push(o.id);
+              const names = Object.keys(S);
+              const shirt = S.villager.palette.indexOf('#ff00ff') >= 0;
+              return { bad, libMiss, n: names.length, has: ['villager', 'villager_walk', 'mystery', 'bush', 'tree'].every(x => names.indexOf(x) >= 0), shirt,
+                campfire: f({ id: 'campfire', label: 'Camp fire' }), torch: f({ id: 'big_torch', label: 'Torch of doom' }),
+                fires: f({ id: 'bonfires', label: 'Bonfires' }), unknown: f({ id: 'zorblax', label: 'Zorblax' }),
+                wins: f({ id: 'zorblax', label: 'Zorblax', looksLike: 'cow' }), badLooks: f({ id: 'tree', label: 'Tree', looksLike: 'nonsense' }),
+                words: f({ id: 'tasty_pies', label: 'Tasty pies' }), cats: f({ id: 'wild_thing', label: 'Angry cats' }), noArgs: f({}) };
+            }""")
+            ok = (not r["bad"] and not r["libMiss"] and r["n"] >= 60 and r["has"] and r["shirt"] and r["campfire"] == "campfire"
+                  and r["torch"] == "campfire" and r["fires"] == "campfire" and r["unknown"] == "mystery" and r["wins"] == "cow"
+                  and r["badLooks"] == "tree" and r["words"] == "cake" and r["cats"] == "cat" and r["noArgs"] == "mystery")
+            return ok, str(r)
+        check("39 sprites: 16x16 set is well formed, every library object has art, names and words resolve, looksLike wins", t39)
+
+        # 40. a pasted pack with a drawn sprite is repaired once and is valid
+        def t40():
+            r = page.evaluate("""() => {
+              const s = LTB.createSim({ seed: 2 });
+              const o = (id) => ({ id, label: id, place: { count: 2, near: 'anywhere' }, sprite: { palette: ['#ff0000'], rows: ['00000000','00000000','00000000','00000000','00000000','00000000','00000000','00000000'] } });
+              const p = { id: 'drawn', title: 'Drawn', narration: 'Two things appear, drawn badly.',
+                objects: [o('thing_a'), o('thing_b')],
+                behaviors: [{ id: 'stare', label: 'Staring', priority: 5, duration: 2, target: { kind: 'self' }, do: [] }],
+                drawback: { label: 'Staring', text: 'Everyone stares.', rules: ['stare'] } };
+              const before = LTB.validatePack(JSON.parse(JSON.stringify(p)), s).ok;
+              const notes = LTB.repairPack(p, s);
+              const v = LTB.validatePack(p, s);
+              return { before, after: v.ok, errs: v.errors, notes, left: p.objects.some(x => 'sprite' in x) };
+            }""")
+            ok = (not r["before"] and r["after"] and not r["left"] and len(r["notes"]) == 1 and "own art" in r["notes"][0])
+            return ok, str(r)
+        check("40 repair: a drawn sprite is removed once, with a note, and the pack is then valid", t40)
+
+        # 41. the AI instructions list exactly the sprite names (and match the notes file when it is there)
+        def t41():
+            r = page.evaluate("""() => {
+              const line = LTB.AI_INSTRUCTIONS.split('\\n').find(l => l.indexOf('`looksLike`') >= 0 && l.indexOf('mystery') >= 0) || '';
+              const listed = line.slice(line.lastIndexOf(': ') + 2).replace(/\\.$/, '').split(', ');
+              const keys = Object.keys(LTB.SPRITES).filter(k => k !== 'villager_walk');
+              return { same: JSON.stringify(listed) === JSON.stringify(keys), listed: listed.length, keys: keys.length,
+                       noSpriteField: LTB.AI_INSTRUCTIONS.indexOf('`sprite`') < 0, text: LTB.AI_INSTRUCTIONS };
+            }""")
+            notes = ROOT.parent / "let-there-be-context" / "notes" / "rule-language.md"
+            synced = True
+            if notes.exists():
+                md = notes.read_text(encoding="utf-8").replace("\r\n", "\n")
+                body = md[md.index("# AI instructions"):].strip()
+                synced = body == r["text"].strip()
+            return r["same"] and r["noSpriteField"] and synced, f"listed {r['listed']} of {r['keys']}, matches notes file {synced}"
+        check("41 AI instructions: looksLike lists exactly the sprite names and the notes file is in sync", t41)
+
+        # 42. zoom and pan keep click-to-select working
+        def t42():
+            zp = new_page(browser, [], "?seed=4&mode=free")
+            zp.click('#speeds button[data-speed="0"]')
+            zp.wait_for_timeout(200)
+            where = """(id) => { const v = LTB.game.sim.state.villagers[id], cv = document.getElementById('cv'), r = cv.getBoundingClientRect(), k = cv.width / r.width, V = LTB.view;
+              return { x: r.left + (V.ox + v.x * V.s) / k, y: r.top + (V.oy + v.y * V.s) / k, name: v.name }; }"""
+            pick = zp.evaluate("""() => { const vs = LTB.game.sim.state.villagers.filter(v => v.alive);
+              let best = vs[0], bd = 1e9; for (const a of vs) { const m = Math.hypot(a.x - 32, a.y - 22); if (m < bd) { bd = m; best = a; } }
+              return best.id; }""")
+            s0 = zp.evaluate("LTB.view.s")
+            p0 = zp.evaluate(where, pick)
+            zp.mouse.move(p0["x"], p0["y"])
+            for _ in range(6):
+                zp.mouse.wheel(0, -100)
+            zp.wait_for_timeout(100)
+            s1 = zp.evaluate("LTB.view.s")
+            p1 = zp.evaluate(where, pick)
+            inside = abs(p1["x"] - p0["x"]) < 40 and abs(p1["y"] - p0["y"]) < 40  # the map is centred while it still fits, so it can shift a little
+            for _ in range(30):
+                zp.mouse.wheel(0, -100)
+            zmax = zp.evaluate("LTB.zoomLevel()")
+            for _ in range(30):
+                zp.mouse.wheel(0, 100)
+            zmin = zp.evaluate("LTB.zoomLevel()")
+            smin = zp.evaluate("LTB.view.s")
+            zp.click("#zin")
+            zp.click("#zin")
+            z2 = zp.evaluate("LTB.zoomLevel()")
+            zp.click("#zout")
+            z1 = zp.evaluate("LTB.zoomLevel()")
+            zp.mouse.move(650, 450)
+            for _ in range(6):
+                zp.mouse.wheel(0, -100)
+            vis = zp.evaluate("""() => { const cv = document.getElementById('cv'), r = cv.getBoundingClientRect(), k = cv.width / r.width, V = LTB.view;
+              const vs = LTB.game.sim.state.villagers.filter(v => v.alive);
+              return vs.map(v => ({ id: v.id, x: r.left + (V.ox + v.x * V.s) / k, y: r.top + (V.oy + v.y * V.s) / k, name: v.name }))
+                .filter(p => p.x > 100 && p.x < 800 && p.y > 100 && p.y < 700); }""")
+            sel = None
+            if vis:
+                far = max(vis, key=lambda a: min([abs(a["x"] - b["x"]) + abs(a["y"] - b["y"]) for b in vis if b is not a] or [999]))
+                zp.mouse.click(far["x"], far["y"])
+                zp.wait_for_timeout(150)
+                sel = (zp.locator("#vpanel h3").first.inner_text() if zp.locator("#vpanel h3").count() else None, far["name"])
+            ox0 = zp.evaluate("LTB.view.ox")
+            zp.mouse.move(400, 400)
+            zp.mouse.down()
+            zp.mouse.move(500, 430, steps=5)
+            zp.mouse.up()
+            ox1 = zp.evaluate("LTB.view.ox")
+            zp.close()
+            ok = (s1 > s0 * 1.5 and inside and abs(zmax - 4) < 1e-9 and abs(zmin - 1) < 1e-9 and abs(smin - s0) < 1e-6
+                  and z2 > 1.5 and 1 < z1 < z2 and sel is not None and sel[0] is not None and sel[0].startswith(sel[1]) and ox1 > ox0)
+            return ok, f"scale {s0:.1f}->{s1:.1f}, point under cursor kept {inside}, zoom max {zmax:.2f} min {zmin:.2f}, buttons {z2:.2f}/{z1:.2f}, selected {sel}, pan {ox0:.0f}->{ox1:.0f}"
+        check("42 zoom: wheel and buttons change the scale within limits, dragging pans, clicking still selects the villager", t42)
 
         errors.extend(ui_errors)
         errors.extend(new_errors)
