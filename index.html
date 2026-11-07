@@ -57,6 +57,12 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
 #askbox textarea{width:100%;height:130px;margin:4px 0;background:#0f151c;color:#e8e4d8;border:1px solid #435468;border-radius:4px;font:12px/1.3 Consolas,monospace;padding:6px}
 #askbox .row{display:flex;gap:6px;margin:4px 0}
 #errors{margin:6px 0;padding-left:18px;color:#f0a0a0}
+#suggest{margin:0 0 8px;padding:6px 8px;background:#1f2935;border-radius:4px}
+#suggest[hidden],#ideaspanel[hidden]{display:none}
+#suggest p{margin:0 0 6px}
+#suggest-btns,#ideas-list{display:flex;flex-wrap:wrap;gap:6px}
+#ideaspanel{position:fixed;right:8px;bottom:56px;width:min(420px,calc(100% - 16px));max-height:55vh;overflow:auto;z-index:9;background:#1b232d;border:1px solid #435468;border-radius:6px;padding:8px}
+#ideaspanel p{margin:0 0 6px;color:#9fb0c4}
 @media (max-width:700px){
  #mid{flex-direction:column}
  #side{width:100%;height:34%;border-left:0;border-top:1px solid #2c3846}
@@ -91,7 +97,12 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
  <form id="cmdbar" autocomplete="off">
   <input id="cmd" type="text" placeholder="Say the word..." aria-label="Command">
   <button type="submit" id="go">Speak</button>
+  <button type="button" id="ideas">Ideas</button>
  </form>
+ <div id="ideaspanel" hidden>
+  <p id="ideas-line"></p>
+  <div id="ideas-list"></div>
+ </div>
  <div id="start" hidden>
   <div id="startbox">
    <h1>Let there be</h1>
@@ -111,6 +122,10 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
  <div id="ask" hidden>
   <div id="askbox">
    <h2>Ask the AI</h2>
+   <div id="suggest" hidden>
+    <p id="suggest-line"></p>
+    <div id="suggest-btns"></div>
+   </div>
    <p>Nothing is sent anywhere. Copy this prompt, give it to an AI of your choice, then paste its JSON answer below.</p>
    <textarea id="prompt" readonly></textarea>
    <div class="row"><button type="button" id="copy">Copy</button></div>
@@ -226,6 +241,683 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
        "do": [{"item": "food", "by": -2, "on": "target"}, {"health": -5, "on": "target"}, {"feeling": -10, "towards": "self"}, {"event": "justice", "radius": 8}, {"log": "{actor} fined {target} two berries and some dignity."}]}
     ],
     "drawback": {"label": "Taxes and corruption", "text": "Everyone pays in, the chief skims, and an unpopular chief gets overthrown.", "rules": ["pay_tax", "skim"]}
+  },
+  "invent farming": {
+    "id": "farming", "title": "Farming", "narration": "You invent farming. The villagers bury perfectly good berries in rows and wait, which is apparently the whole idea.",
+    "objects": [
+      {"id": "farm_field", "label": "Farm plot", "place": {"count": 20, "near": "anywhere"},
+       "stock": {"item": "food", "amount": 3, "max": 3, "regrowPerDay": 0}, "respawn": {"perDay": 2.4, "max": 28},
+       "sprite": {"palette": ["#6b4a2b", "#8a6a3a", "#7ccf4a"], "rows": ["........", "..2..2..", ".222.222", "..2..2..", "00000000", "11111111", "00000000", "11111111"]}},
+      {"id": "farm_scarecrow", "label": "Scarecrow", "place": {"count": 3, "near": "anywhere"},
+       "sprite": {"palette": ["#c79a5b", "#7a4b24", "#d23a2a", "#222222"], "rows": ["..0000..", "..0330..", "...00...", "1111111.", "..1221..", "..1221..", "...11...", "...11..."]}}
+    ],
+    "behaviors": [
+      {"id": "farm_harvest", "label": "Harvesting crops", "when": [{"item": "food", "op": "<", "value": 3}], "priority": 23,
+       "urgency": {"need": "hunger", "scale": 0.6},
+       "target": {"kind": "object", "object": "farm_field", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest", "maxRange": 9}, "duration": 10,
+       "do": [{"fromStock": "food", "amount": 3}, {"remove": "target"}, {"need": "tiredness", "by": 4}]},
+      {"id": "farm_weed", "label": "Weeding", "when": [{"chance": 0.1}], "priority": 17,
+       "target": {"kind": "object", "object": "farm_field", "pick": "nearest", "maxRange": 14}, "duration": 14, "cooldownDays": 0.5,
+       "do": [{"need": "tiredness", "by": 10}, {"log": "{actor} weeded a row. The weeds were there first and made a point of it."}]},
+      {"id": "farm_boundary", "label": "Disputing a row", "when": [{"nearObject": "farm_field", "radius": 3}, {"chance": 0.08}], "priority": 21,
+       "target": {"kind": "villager", "pick": "nearest", "maxRange": 5}, "duration": 5, "cooldownDays": 1,
+       "do": [{"feeling": -7, "towards": "both"}, {"log": "{actor} and {target} disagreed about whose row that was. It was nobody's row. It was grass."}]},
+      {"id": "farm_confide", "label": "Confiding in a scarecrow", "when": [{"chance": 0.05}], "priority": 14,
+       "target": {"kind": "object", "object": "farm_scarecrow", "pick": "nearest", "maxRange": 14}, "duration": 10, "cooldownDays": 2,
+       "do": [{"feeling": 2, "towards": "nearby", "radius": 3}, {"log": "{actor} told the scarecrow a secret. The scarecrow has kept it, which is more than the neighbours would have."}]}
+    ],
+    "drawback": {"label": "Backache and boundary disputes", "text": "Hauling and weeding wear everyone out, and neighbours now argue about where a row ends.", "rules": ["farm_weed", "farm_boundary", "farm_harvest"]}
+  },
+  "domesticate chickens": {
+    "id": "chickens", "title": "Chickens", "narration": "You domesticate chickens. Dozens of them move in, and every one is convinced it is in charge.",
+    "objects": [
+      {"id": "hen", "label": "Chicken", "place": {"count": 24, "near": "villagers"},
+       "spread": {"onto": ["bush"], "becomes": "hen_pecked_bush", "chancePerDay": 0.06, "radius": 1.5},
+       "respawn": {"perDay": 0.3, "max": 30},
+       "sprite": {"palette": ["#ffffff", "#e8a33d", "#d23a2a", "#222222"], "rows": ["....2...", "...00...", "...031..", "..0000..", ".000000.", ".000000.", "..0000..", "..1..1.."]}},
+      {"id": "hen_nest", "label": "Nest of eggs", "place": {"count": 8, "near": "villagers"},
+       "stock": {"item": "food", "amount": 2, "max": 2, "regrowPerDay": 0}, "respawn": {"perDay": 1.5, "max": 14},
+       "sprite": {"palette": ["#c79a5b", "#7a4b24", "#ffffff"], "rows": ["........", "........", "...22...", "..2222..", ".001100.", "01100110", "00111100", ".000000."]}},
+      {"id": "hen_pecked_bush", "label": "Pecked berry bush", "place": {"count": 0, "near": "anywhere"},
+       "stock": {"item": "food", "amount": 1, "max": 2, "regrowPerDay": 0.3},
+       "sprite": {"palette": ["#3f8f4a", "#6b4a2b", "#ffffff"], "rows": ["........", "........", "...00...", "..0000..", ".00.00..", "..0000..", "..1.1.2.", ".1...1.."]}}
+    ],
+    "behaviors": [
+      {"id": "hen_eggs", "label": "Collecting eggs", "when": [{"item": "food", "op": "<", "value": 3}], "priority": 22,
+       "urgency": {"need": "hunger", "scale": 0.55},
+       "target": {"kind": "object", "object": "hen_nest", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest", "maxRange": 14}, "duration": 6,
+       "do": [{"fromStock": "food", "amount": 2}, {"remove": "target"}]},
+      {"id": "hen_chase", "label": "Chasing a chicken", "when": [{"chance": 0.1}], "priority": 16,
+       "target": {"kind": "object", "object": "hen", "pick": "nearest", "maxRange": 10}, "duration": 10, "cooldownDays": 0.5,
+       "do": [{"need": "tiredness", "by": 9}, {"log": "{actor} chased a chicken for ten minutes and learned only what the chicken already knew."}]},
+      {"id": "hen_rooster", "label": "Woken by a rooster", "when": [{"night": true}, {"chance": 0.12}], "priority": 66,
+       "target": {"kind": "self"}, "duration": 3, "do": [{"need": "tiredness", "by": 10}, {"log": "{actor} was woken by a rooster who had clearly lost track of the time."}]},
+      {"id": "hen_peck", "label": "Getting pecked", "when": [{"nearObject": "hen", "radius": 1.2}, {"chance": 0.06}], "priority": 40,
+       "target": {"kind": "self"}, "duration": 2, "do": [{"health": -2}, {"log": "{actor} stood too close to a hen and was pecked for it."}]}
+    ],
+    "drawback": {"label": "Rooster and pecking", "text": "Roosters wake people at the wrong hour, hens peck, and the hens strip the berry bushes they wander through.", "rules": ["hen_rooster", "hen_peck", "hen_pecked_bush"]}
+  },
+  "teach them to fish": {
+    "id": "fishing", "title": "Fishing", "narration": "You teach them to fish. They will now eat for a lifetime, which on this island is shorter than the proverb assumes.",
+    "objects": [
+      {"id": "fish_shoal", "label": "Fishing spot", "place": {"count": 26, "near": "coast"},
+       "stock": {"item": "food", "amount": 3, "max": 6, "regrowPerDay": 1.5},
+       "sprite": {"palette": ["#2b6cb0", "#e6eef5", "#e8a33d"], "rows": ["..0000..", ".000000.", "00000000", "00211000", "02111100", "00211000", ".000000.", "..0000.."]}}
+    ],
+    "behaviors": [
+      {"id": "fish_catch", "label": "Fishing", "when": [{"item": "food", "op": "<", "value": 3}], "priority": 22,
+       "urgency": {"need": "hunger", "scale": 0.55},
+       "target": {"kind": "object", "object": "fish_shoal", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest"}, "duration": 14,
+       "do": [{"fromStock": "food", "amount": 2}, {"need": "tiredness", "by": 3}]},
+      {"id": "fish_tale", "label": "Describing the one that got away", "when": [{"chance": 0.08}], "priority": 16,
+       "target": {"kind": "villager", "pick": "nearest", "maxRange": 8}, "duration": 8, "cooldownDays": 1,
+       "do": [{"feeling": 3, "towards": "both"}, {"log": "{actor} showed {target} how big it was. It was never that big, and the fish knows it."}]},
+      {"id": "fish_fall_in", "label": "Falling in the sea", "when": [{"nearObject": "fish_shoal", "radius": 2}, {"chance": 0.07}], "priority": 45,
+       "target": {"kind": "self"}, "duration": 3, "do": [{"health": -7}, {"need": "tiredness", "by": 10}, {"log": "{actor} leaned over the sea to look at a fish and went into it. The sea had no comment."}]}
+    ],
+    "drawback": {"label": "Wet and in danger", "text": "Fishing means standing on the edge of the sea, and sometimes going into it.", "rules": ["fish_fall_in", "fish_catch"]}
+  },
+  "open a bakery": {
+    "id": "bakery", "title": "Bakery", "narration": "You open a bakery. By lunchtime every villager is an expert on bread and a critic of this bread.",
+    "items": [{"id": "bread", "label": "Bread"}],
+    "objects": [
+      {"id": "bakery_shop", "label": "Bakery", "place": {"count": 2, "near": "center"},
+       "stock": {"item": "food", "amount": 0, "max": 1000, "regrowPerDay": 0},
+       "sprite": {"palette": ["#7a4b24", "#c79a5b", "#e0c080", "#3a2412", "#d23a2a"], "rows": ["...44...", "..4444..", ".444444.", "44444444", "11111111", "12211331", "11111331", "00000000"]}}
+    ],
+    "behaviors": [
+      {"id": "bakery_bake", "label": "Baking bread", "when": [{"item": "food", "op": ">=", "value": 2}], "priority": 27,
+       "target": {"kind": "object", "object": "bakery_shop", "pick": "nearest"}, "duration": 8, "cooldownDays": 0.8,
+       "do": [{"toStock": "food", "amount": 3}, {"item": "bread", "by": 3}]},
+      {"id": "bakery_eat", "label": "Eating bread", "when": [{"item": "bread", "op": ">=", "value": 1}, {"need": "hunger", "op": ">", "value": 30}], "priority": 53,
+       "urgency": {"need": "hunger", "scale": 0.5}, "target": {"kind": "self"}, "duration": 5,
+       "do": [{"item": "bread", "by": -1}, {"need": "hunger", "by": -50}, {"need": "tiredness", "by": 6}]},
+      {"id": "bakery_queue", "label": "Jumping the bread queue", "when": [{"nearObject": "bakery_shop", "radius": 4}, {"chance": 0.1}], "priority": 30,
+       "target": {"kind": "villager", "pick": "nearest", "maxRange": 4}, "duration": 3, "cooldownDays": 1,
+       "do": [{"feeling": -6, "towards": "self"}, {"log": "{actor} stepped in front of {target} at the bakery. A new kind of violence was born, and it was mostly sighing."}]},
+      {"id": "bakery_sniff", "label": "Standing outside the bakery", "when": [{"need": "hunger", "op": ">", "value": 50}, {"item": "food", "op": "<", "value": 1}, {"chance": 0.15}], "priority": 26,
+       "target": {"kind": "object", "object": "bakery_shop", "pick": "nearest"}, "duration": 8, "cooldownDays": 1,
+       "do": [{"need": "hunger", "by": -3}, {"log": "{actor} stood outside the bakery and breathed in. It is not filling, but it is free."}]}
+    ],
+    "drawback": {"label": "Carbs and queues", "text": "Bread makes people sleepy, the queue makes them hostile, and the bakery swallows the island's berries.", "rules": ["bakery_eat", "bakery_queue", "bakery_bake"]}
+  },
+  "erupt the volcano": {
+    "id": "volcano", "title": "Volcano", "narration": "The hill in the middle of the island turns out to have been a volcano all along. It chooses today to mention it.",
+    "objects": [
+      {"id": "volcano_mountain", "label": "Volcano", "place": {"count": 1, "near": "center"},
+       "hurts": {"radius": 2.2, "perDay": 25},
+       "sprite": {"palette": ["#4a3a34", "#8a7468", "#ff6a1a", "#ffd24a"], "rows": ["...22...", "..2332..", "..0220..", ".001100.", ".011110.", "01111110", "01111110", "00000000"]}},
+      {"id": "volcano_lava", "label": "Lava flow", "place": {"count": 12, "near": "anywhere"}, "lifetimeDays": 3,
+       "hurts": {"radius": 1.8, "perDay": 150},
+       "spread": {"onto": ["tree", "bush"], "becomes": "volcano_ashbush", "chancePerDay": 1.3, "radius": 2.5},
+       "sprite": {"palette": ["#b3200f", "#ff6a1a", "#ffd24a"], "rows": ["........", "..0000..", ".011100.", "01122110", "01222210", ".012210.", "..0110..", "........"]}},
+      {"id": "volcano_ashbush", "label": "Ash berry bush", "place": {"count": 0, "near": "anywhere"},
+       "stock": {"item": "food", "amount": 3, "max": 6, "regrowPerDay": 1.4},
+       "sprite": {"palette": ["#6b6b6b", "#3f8f4a", "#d94a8c", "#cfcfcf"], "rows": ["........", "...11...", "..1121..", ".112111.", ".111211.", "..1111..", "..3333..", ".333333."]}}
+    ],
+    "behaviors": [
+      {"id": "volcano_flee", "label": "Running from lava", "when": [{"nearObject": "volcano_lava", "radius": 3}], "priority": 96,
+       "target": {"kind": "away", "object": "volcano_lava"}, "duration": 1, "do": []},
+      {"id": "volcano_pick", "label": "Picking ash berries", "when": [{"item": "food", "op": "<", "value": 3}], "priority": 24,
+       "urgency": {"need": "hunger", "scale": 0.6},
+       "target": {"kind": "object", "object": "volcano_ashbush", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest"}, "duration": 8,
+       "do": [{"fromStock": "food", "amount": 2}]},
+      {"id": "volcano_gawk", "label": "Standing a bit too close", "when": [{"chance": 0.05}], "priority": 15,
+       "target": {"kind": "object", "object": "volcano_mountain", "pick": "nearest", "maxRange": 25}, "duration": 10, "cooldownDays": 1.5,
+       "do": [{"health": -2}, {"feeling": 2, "towards": "nearby", "radius": 3}, {"log": "{actor} stood near the volcano for a better view. This is how most volcano stories begin."}]},
+      {"id": "volcano_cough", "label": "Coughing up ash", "when": [{"nearObject": "volcano_mountain", "radius": 5}, {"chance": 0.08}], "priority": 35,
+       "target": {"kind": "self"}, "duration": 4, "do": [{"health": -1}, {"need": "tiredness", "by": 6}, {"log": "{actor} coughed up a small part of the island."}]}
+    ],
+    "drawback": {"label": "Lava and ash", "text": "Lava burns whoever it reaches and everything near the volcano is full of ash. The ash does make berries grow bigger.", "rules": ["volcano_lava", "volcano_mountain", "volcano_cough"]}
+  },
+  "send a plague": {
+    "id": "plague", "title": "Plague", "narration": "A plague arrives. A few villagers find out first, and everyone else is informed by them.",
+    "items": [{"id": "plague_ill", "label": "Plague"}, {"id": "plague_immune", "label": "Immunity"}],
+    "gifts": [{"item": "plague_ill", "amount": 1, "share": 0.14}],
+    "behaviors": [
+      {"id": "plague_cough", "label": "Coughing on a neighbour", "when": [{"item": "plague_ill", "op": ">=", "value": 1}, {"chance": 0.3}], "priority": 38,
+       "target": {"kind": "villager", "filter": [{"item": "plague_ill", "op": "<", "value": 1}, {"item": "plague_immune", "op": "<", "value": 1}], "pick": "nearest", "maxRange": 3},
+       "duration": 3, "cooldownDays": 0.4,
+       "do": [{"item": "plague_ill", "by": 1, "on": "target"}, {"feeling": -4, "towards": "self"}, {"log": "{actor} coughed on {target} in a friendly and regrettable way."}]},
+      {"id": "plague_fever", "label": "Lying in a fever", "when": [{"item": "plague_ill", "op": ">=", "value": 1}], "priority": 52,
+       "target": {"kind": "self"}, "duration": 18, "do": [{"health": -3}, {"need": "hunger", "by": 6}]},
+      {"id": "plague_recover", "label": "Recovering", "when": [{"item": "plague_ill", "op": ">=", "value": 1}, {"chance": 0.12}], "priority": 56,
+       "target": {"kind": "self"}, "duration": 2,
+       "do": [{"item": "plague_ill", "by": -1}, {"item": "plague_immune", "by": 1}, {"log": "{actor} recovered from the plague and has decided to be insufferable about it."}]},
+      {"id": "plague_rebuild", "label": "Repopulating the island", "when": [{"item": "plague_immune", "op": ">=", "value": 1}, {"need": "hunger", "op": "<", "value": 50}, {"item": "food", "op": ">=", "value": 1}, {"chance": 0.1}], "priority": 26,
+       "target": {"kind": "villager", "filter": [{"feeling": true, "op": ">=", "value": 0}], "pick": "nearest", "maxRange": 8}, "duration": 15, "cooldownDays": 8,
+       "do": [{"item": "food", "by": -1}, {"birth": 1}, {"feeling": 4, "towards": "both"}, {"log": "{actor} and {target} looked at the empty spaces on the island and volunteered to be the plan."}]},
+      {"id": "plague_boast", "label": "Boasting about immunity", "when": [{"item": "plague_immune", "op": ">=", "value": 1}, {"chance": 0.06}], "priority": 15,
+       "target": {"kind": "villager", "pick": "nearest", "maxRange": 6}, "duration": 6, "cooldownDays": 1,
+       "do": [{"feeling": -3, "towards": "self"}, {"log": "{actor} told {target} about surviving the plague, for the ninth time."}]}
+    ],
+    "drawback": {"label": "Fever and funerals", "text": "The sick lose health, cough on their neighbours and some of them do not get up again. The survivors are immune and quick to start over.", "rules": ["plague_cough", "plague_fever"]}
+  },
+  "flood the island": {
+    "id": "flood", "title": "Flood", "narration": "The sea decides the island is mostly its own and moves in for a few days. It leaves a great deal of damp fish behind.",
+    "objects": [
+      {"id": "flood_water", "label": "Floodwater", "place": {"count": 36, "near": "anywhere"}, "lifetimeDays": 3.5,
+       "hurts": {"radius": 1.4, "perDay": 70},
+       "spread": {"onto": ["bush"], "becomes": "flood_reedbush", "chancePerDay": 0.6, "radius": 2.5},
+       "sprite": {"palette": ["#2b6cb0", "#5aa0e0", "#9fd0ff"], "rows": ["........", "........", "..22..22", ".2..22..", "11111111", "00000000", "11111111", "00000000"]}},
+      {"id": "flood_reedbush", "label": "Waterlogged berry bush", "place": {"count": 0, "near": "anywhere"},
+       "stock": {"item": "food", "amount": 2, "max": 5, "regrowPerDay": 1.1},
+       "sprite": {"palette": ["#3f8f4a", "#2b6cb0", "#d94a8c"], "rows": ["........", "...00...", "..0200..", ".00200..", ".000200.", "..0000..", "11111111", "..11.11."]}},
+      {"id": "flood_fish", "label": "Stranded fish", "place": {"count": 22, "near": "anywhere"}, "lifetimeDays": 7,
+       "stock": {"item": "food", "amount": 3, "max": 3, "regrowPerDay": 0},
+       "sprite": {"palette": ["#8a6a3a", "#c8d4de", "#e8a33d", "#222222"], "rows": ["........", "........", "........", ".11111.2", "1311111.", ".11111.2", "........", "00000000"]}}
+    ],
+    "behaviors": [
+      {"id": "flood_flee", "label": "Wading for higher ground", "when": [{"nearObject": "flood_water", "radius": 2.5}], "priority": 94,
+       "target": {"kind": "away", "object": "flood_water"}, "duration": 1, "do": []},
+      {"id": "flood_fish_grab", "label": "Collecting stranded fish", "when": [{"item": "food", "op": "<", "value": 3}], "priority": 25,
+       "urgency": {"need": "hunger", "scale": 0.6},
+       "target": {"kind": "object", "object": "flood_fish", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest"}, "duration": 6,
+       "do": [{"fromStock": "food", "amount": 3}]},
+      {"id": "flood_berries", "label": "Picking waterlogged berries", "when": [{"item": "food", "op": "<", "value": 3}], "priority": 24,
+       "urgency": {"need": "hunger", "scale": 0.6},
+       "target": {"kind": "object", "object": "flood_reedbush", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest"}, "duration": 8,
+       "do": [{"fromStock": "food", "amount": 2}]},
+      {"id": "flood_socks", "label": "Wringing out socks", "when": [{"nearObject": "flood_water", "radius": 6}, {"chance": 0.1}], "priority": 30,
+       "target": {"kind": "self"}, "duration": 6, "do": [{"need": "tiredness", "by": 8}, {"log": "{actor} wrung out a sock and sighed. The sock had seen worse."}]}
+    ],
+    "drawback": {"label": "Drowning", "text": "The floodwater is deep enough to hurt anyone standing in it. It does leave stranded fish and berry bushes that come back thicker.", "rules": ["flood_water", "flood_socks"]}
+  },
+  "drop a meteor": {
+    "id": "meteor", "title": "Meteor", "narration": "A meteor lands in the middle of the island. It was on its way somewhere else and is quietly embarrassed.",
+    "objects": [
+      {"id": "meteor_fireball", "label": "Impact fireball", "place": {"count": 1, "near": "center"}, "lifetimeDays": 0.3,
+       "hurts": {"radius": 4.5, "perDay": 500},
+       "sprite": {"palette": ["#fff1a8", "#ff9a1a", "#d23a2a"], "rows": ["2.......", ".2..11..", "..1001.2", ".100001.", ".100001.", "..1001..", ".2.11.2.", "2......2"]}},
+      {"id": "meteor_debris", "label": "Burning debris", "place": {"count": 8, "near": "anywhere"}, "lifetimeDays": 1.5,
+       "hurts": {"radius": 1.2, "perDay": 60},
+       "sprite": {"palette": ["#5a4a42", "#ff6a1a", "#ffd24a"], "rows": ["........", "...2....", "..212...", "..0100..", ".00000..", ".0000.0.", "..00.00.", "........"]}},
+      {"id": "meteor_rock", "label": "Space rock", "place": {"count": 1, "near": "center"},
+       "aura": {"radius": 3.5, "need": "hunger", "perDay": -20},
+       "sprite": {"palette": ["#6a7080", "#a0a8b8", "#7dffb0", "#3a3f4a"], "rows": ["........", "..2..2..", "...00...", ".001100.", "00112100", "01111110", "03333330", ".000000."]}}
+    ],
+    "behaviors": [
+      {"id": "meteor_flee", "label": "Running from the fireball", "when": [{"nearObject": "meteor_fireball", "radius": 7}], "priority": 97,
+       "target": {"kind": "away", "object": "meteor_fireball"}, "duration": 1, "do": []},
+      {"id": "meteor_flee_debris", "label": "Dodging burning debris", "when": [{"nearObject": "meteor_debris", "radius": 2.5}], "priority": 93,
+       "target": {"kind": "away", "object": "meteor_debris"}, "duration": 1, "do": []},
+      {"id": "meteor_gather", "label": "Gathering round the space rock", "when": [{"need": "hunger", "op": ">", "value": 45}], "priority": 30,
+       "target": {"kind": "object", "object": "meteor_rock", "pick": "nearest"}, "duration": 20, "cooldownDays": 0.5,
+       "do": [{"need": "hunger", "by": -20}, {"feeling": 3, "towards": "nearby", "radius": 3}]},
+      {"id": "meteor_lick", "label": "Licking the space rock", "when": [{"chance": 0.04}], "priority": 18,
+       "target": {"kind": "object", "object": "meteor_rock", "pick": "nearest", "maxRange": 30}, "duration": 4, "cooldownDays": 3,
+       "do": [{"need": "hunger", "by": -10}, {"health": -3}, {"log": "{actor} licked the space rock to see what would happen. It tasted of distance and mild regret."}]}
+    ],
+    "drawback": {"label": "Impact", "text": "The fireball kills whoever is under it, burning debris lands around and the lucky rock leaves people hanging about the middle of the island.", "rules": ["meteor_fireball", "meteor_debris", "meteor_lick"]}
+  },
+  "send locusts": {
+    "id": "locusts", "title": "Locusts", "narration": "A cloud of locusts arrives and begins eating the island in alphabetical order. Berries are first.",
+    "objects": [
+      {"id": "locust_swarm", "label": "Locust swarm", "place": {"count": 6, "near": "anywhere"}, "lifetimeDays": 6,
+       "stock": {"item": "food", "amount": 5, "max": 5, "regrowPerDay": 0},
+       "hurts": {"radius": 1.2, "perDay": 15},
+       "spread": {"onto": ["bush"], "becomes": "locust_stripped", "chancePerDay": 1.2, "radius": 3},
+       "sprite": {"palette": ["#6a7a1a", "#c0d050", "#2a2a10"], "rows": ["........", ".2..2..2", "..11....", "1..2.11.", ".21...2.", "..1.11..", "2....2.1", "..11...."]}},
+      {"id": "locust_stripped", "label": "Stripped bush", "place": {"count": 0, "near": "anywhere"},
+       "stock": {"item": "food", "amount": 0, "max": 6, "regrowPerDay": 2.6},
+       "sprite": {"palette": ["#6b4a2b", "#3f8f4a"], "rows": ["........", "..0..0..", "...00...", ".0.00.0.", "..0000..", "...00...", "..1.1...", ".1...1.."]}}
+    ],
+    "behaviors": [
+      {"id": "locust_snack", "label": "Eating fried locusts", "when": [{"item": "food", "op": "<", "value": 3}, {"need": "hunger", "op": ">", "value": 40}], "priority": 27,
+       "urgency": {"need": "hunger", "scale": 0.5},
+       "target": {"kind": "object", "object": "locust_swarm", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest", "maxRange": 12}, "duration": 6,
+       "do": [{"fromStock": "food", "amount": 2}]},
+      {"id": "locust_swat", "label": "Swatting locusts", "when": [{"nearObject": "locust_swarm", "radius": 2.5}], "priority": 44,
+       "target": {"kind": "self"}, "duration": 3, "do": [{"health": -1}, {"log": "{actor} fought a locust and lost on points."}]},
+      {"id": "locust_regrown", "label": "Picking regrown berries", "when": [{"item": "food", "op": "<", "value": 3}], "priority": 24,
+       "urgency": {"need": "hunger", "scale": 0.6},
+       "target": {"kind": "object", "object": "locust_stripped", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest"}, "duration": 8,
+       "do": [{"fromStock": "food", "amount": 2}]},
+      {"id": "locust_plead", "label": "Asking the locusts to leave", "when": [{"chance": 0.05}], "priority": 14,
+       "target": {"kind": "object", "object": "locust_swarm", "pick": "nearest", "maxRange": 12}, "duration": 10, "cooldownDays": 2,
+       "do": [{"feeling": -2, "towards": "nearby", "radius": 3}, {"log": "{actor} asked the locusts to leave. The locusts asked {actor} what was for dinner."}]}
+    ],
+    "drawback": {"label": "Stripped bushes", "text": "The swarm eats every bush it lands on and bites anyone nearby. The bushes grow back faster than before, in due course.", "rules": ["locust_swarm", "locust_swat", "locust_stripped"]}
+  },
+  "invent marriage": {
+    "id": "marriage", "title": "Marriage", "narration": "You invent marriage. Villagers promise to stay together forever, subject to terms and conditions nobody has read.",
+    "items": [{"id": "marriage_ring", "label": "Wedding ring"}],
+    "traits": [{"id": "married", "label": "Married", "share": 0}],
+    "behaviors": [
+      {"id": "marriage_propose", "label": "Getting married", "who": {"notTrait": "married"}, "when": [{"need": "hunger", "op": "<", "value": 60}, {"chance": 0.1}], "priority": 30,
+       "target": {"kind": "villager", "filter": [{"item": "marriage_ring", "op": "<", "value": 1}, {"feeling": true, "op": ">=", "value": 3}], "pick": "nearest", "maxRange": 8}, "duration": 10,
+       "do": [{"addTrait": "married"}, {"addTrait": "married", "on": "target"}, {"item": "marriage_ring", "by": 1}, {"item": "marriage_ring", "by": 1, "on": "target"}, {"feeling": 20, "towards": "both"}, {"event": "wedding", "radius": 6}, {"log": "{actor} married {target} in front of a crowd that mostly came for the food."}]},
+      {"id": "marriage_child", "label": "Starting a married family", "who": {"trait": "married"}, "when": [{"need": "hunger", "op": "<", "value": 55}, {"item": "food", "op": ">=", "value": 1}, {"chance": 0.25}], "priority": 28,
+       "target": {"kind": "villager", "filter": [{"item": "marriage_ring", "op": ">=", "value": 1}, {"feeling": true, "op": ">=", "value": 10}], "pick": "nearest", "maxRange": 6}, "duration": 12, "cooldownDays": 5,
+       "do": [{"item": "food", "by": -1}, {"birth": 1}, {"feeling": 3, "towards": "both"}]},
+      {"id": "marriage_argue", "label": "Arguing about the dishes", "who": {"trait": "married"}, "when": [{"chance": 0.08}], "priority": 31,
+       "target": {"kind": "villager", "filter": [{"item": "marriage_ring", "op": ">=", "value": 1}], "pick": "nearest", "maxRange": 5}, "duration": 6, "cooldownDays": 0.5,
+       "do": [{"feeling": -6, "towards": "both"}, {"log": "{actor} and {target} argued about the dishes. There are no dishes. The argument continues."}]},
+      {"id": "marriage_affair", "label": "Having a quiet affair", "who": {"trait": "married"}, "when": [{"chance": 0.035}], "priority": 36,
+       "target": {"kind": "villager", "filter": [{"item": "marriage_ring", "op": "<", "value": 1}, {"feeling": true, "op": ">=", "value": 0}], "pick": "nearest", "maxRange": 8}, "duration": 6, "cooldownDays": 3,
+       "do": [{"feeling": 10, "towards": "both"}, {"event": "scandal", "radius": 6}, {"log": "{actor} was seen with {target}, who is not {actor}'s spouse, and so was everyone else."}]},
+      {"id": "marriage_gossip", "label": "Gossiping about the scandal", "when": [{"memory": "scandal", "withinDays": 1.5}], "priority": 33,
+       "target": {"kind": "villager", "pick": "nearest", "maxRange": 6}, "duration": 5, "cooldownDays": 1,
+       "do": [{"feeling": -2, "towards": "both"}, {"log": "{actor} passed the scandal on to {target}, who passed it on before it could cool."}]},
+      {"id": "marriage_divorce", "label": "Getting divorced", "who": {"trait": "married"}, "when": [{"chance": 0.06}], "priority": 34,
+       "target": {"kind": "villager", "filter": [{"item": "marriage_ring", "op": ">=", "value": 1}, {"feeling": true, "op": "<=", "value": -12}], "pick": "nearest", "maxRange": 5}, "duration": 5,
+       "do": [{"removeTrait": "married"}, {"removeTrait": "married", "on": "target"}, {"item": "marriage_ring", "by": -1}, {"item": "marriage_ring", "by": -1, "on": "target"}, {"feeling": -10, "towards": "both"}, {"log": "{actor} and {target} ended the marriage. The ring is now in a lake and so is the argument."}]}
+    ],
+    "drawback": {"label": "Fights and scandals", "text": "Married couples argue, some of them stray, the whole island gossips about it, and the worst cases end in divorce.", "rules": ["marriage_argue", "marriage_affair", "marriage_divorce"]}
+  },
+  "invent money": {
+    "id": "money", "title": "Money", "narration": "You invent money. A shell is declared to be worth a berry, and within the week nobody can say why.",
+    "items": [{"id": "money_coin", "label": "Coin"}],
+    "gifts": [{"item": "money_coin", "amount": 3}],
+    "objects": [
+      {"id": "money_market", "label": "Market", "place": {"count": 2, "near": "center"},
+       "stock": {"item": "food", "amount": 20, "max": 120, "regrowPerDay": 0},
+       "sprite": {"palette": ["#d23a2a", "#ffffff", "#7a4b24", "#ffd24a"], "rows": ["01010101", "01010101", "01010101", "22222222", "2..33..2", "2.3333.2", "2......2", "22222222"]}}
+    ],
+    "behaviors": [
+      {"id": "money_sell", "label": "Selling berries", "when": [{"item": "food", "op": ">=", "value": 3}], "priority": 27,
+       "target": {"kind": "object", "object": "money_market", "pick": "nearest"}, "duration": 5,
+       "do": [{"toStock": "food", "amount": 2}, {"item": "money_coin", "by": 1}]},
+      {"id": "money_buy", "label": "Buying berries", "when": [{"item": "money_coin", "op": ">=", "value": 1}, {"item": "food", "op": "<", "value": 1}, {"need": "hunger", "op": ">", "value": 40}], "priority": 44,
+       "urgency": {"need": "hunger", "scale": 0.4},
+       "target": {"kind": "object", "object": "money_market", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest"}, "duration": 5,
+       "do": [{"item": "money_coin", "by": -1}, {"fromStock": "food", "amount": 2}]},
+      {"id": "money_hoard", "label": "Counting coins", "when": [{"item": "money_coin", "op": ">=", "value": 6}, {"chance": 0.12}], "priority": 24,
+       "target": {"kind": "self"}, "duration": 8, "do": [{"feeling": -1, "towards": "nearby", "radius": 4}, {"log": "{actor} counted a pile of coins and then counted it again, in case it had changed its mind."}]},
+      {"id": "money_haggle", "label": "Haggling", "when": [{"nearObject": "money_market", "radius": 3}, {"chance": 0.08}], "priority": 30,
+       "target": {"kind": "villager", "pick": "nearest", "maxRange": 4}, "duration": 6, "cooldownDays": 0.5,
+       "do": [{"feeling": -3, "towards": "both"}, {"log": "{actor} haggled with {target} over one berry until neither remembered what a berry was for."}]},
+      {"id": "money_forge", "label": "Minting their own coins", "when": [{"chance": 0.03}], "priority": 33,
+       "target": {"kind": "self"}, "duration": 8, "cooldownDays": 4,
+       "do": [{"item": "money_coin", "by": 4}, {"event": "forgery", "radius": 5}, {"log": "{actor} made some coins at home. They looked just as real, which is the whole problem."}]}
+    ],
+    "drawback": {"label": "Greed and fakes", "text": "Berries get locked in the market, the rich count their coins while the broke go hungry, and everyone haggles.", "rules": ["money_hoard", "money_haggle", "money_forge", "money_sell"]}
+  },
+  "build a school": {
+    "id": "school", "title": "School", "narration": "You build a school. Half the island learns to read, and the other half learns what a deadline is.",
+    "traits": [{"id": "schooled", "label": "Schooled", "share": 0}],
+    "objects": [
+      {"id": "school_house", "label": "School", "place": {"count": 1, "near": "center"},
+       "sprite": {"palette": ["#b5533c", "#e8dcc0", "#3a2412", "#ffd24a"], "rows": ["...33...", "..0000..", ".000000.", "00000000", "11111111", "11211211", "11211211", "11122111"]}}
+    ],
+    "behaviors": [
+      {"id": "school_attend", "label": "Going to school", "who": {"notTrait": "schooled"}, "when": [{"night": false}, {"chance": 0.2}], "priority": 29,
+       "target": {"kind": "object", "object": "school_house", "pick": "nearest"}, "duration": 24, "cooldownDays": 1,
+       "do": [{"addTrait": "schooled"}, {"need": "tiredness", "by": 15}]},
+      {"id": "school_gather", "label": "Picking berries scientifically", "who": {"trait": "schooled"}, "when": [{"item": "food", "op": "<", "value": 3}], "priority": 26,
+       "urgency": {"need": "hunger", "scale": 0.6},
+       "target": {"kind": "object", "object": "bush", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest"}, "duration": 8,
+       "do": [{"fromStock": "food", "amount": 2}]},
+      {"id": "school_teach", "label": "Teaching others to share", "who": {"trait": "schooled"}, "when": [{"item": "food", "op": ">=", "value": 2}], "priority": 27,
+       "target": {"kind": "villager", "filter": [{"need": "hunger", "op": ">", "value": 55}, {"item": "food", "op": "<", "value": 1}], "pick": "nearest", "maxRange": 8}, "duration": 5,
+       "do": [{"transfer": "food", "amount": -1}, {"feeling": 6, "towards": "self"}]},
+      {"id": "school_correct", "label": "Correcting somebody's grammar", "who": {"trait": "schooled"}, "when": [{"chance": 0.1}], "priority": 18,
+       "target": {"kind": "villager", "pick": "nearest", "maxRange": 6}, "duration": 6, "cooldownDays": 0.5,
+       "do": [{"feeling": -6, "towards": "self"}, {"log": "{actor} corrected {target}'s grammar mid-sentence. The sentence did not recover."}]},
+      {"id": "school_homework", "label": "Doing homework", "who": {"trait": "schooled"}, "when": [{"chance": 0.06}], "priority": 19,
+       "target": {"kind": "self"}, "duration": 14, "do": [{"need": "tiredness", "by": 14}, {"log": "{actor} did homework that nobody had set. It was a good effort and also a cry for help."}]}
+    ],
+    "drawback": {"label": "Homework and know-it-alls", "text": "Pupils lose a morning to lessons, get worn out by homework, and correct everyone they meet.", "rules": ["school_attend", "school_correct", "school_homework"]}
+  },
+  "hire police": {
+    "id": "police", "title": "Police", "narration": "You hire police. Three villagers receive a badge, a lot of authority and no training of any kind.",
+    "roles": [{"id": "police_officer", "label": "Police officer", "count": 3, "pick": "random", "reelectBelow": -25}],
+    "objects": [
+      {"id": "police_station", "label": "Police station", "place": {"count": 1, "near": "center"},
+       "sprite": {"palette": ["#3a5a9a", "#e8e8e8", "#1a2a4a", "#ffd24a"], "rows": ["...33...", "..0000..", ".000000.", "00000000", "11111111", "11211211", "11211211", "11122111"]}}
+    ],
+    "behaviors": [
+      {"id": "police_patrol", "label": "Patrolling", "who": {"role": "police_officer"}, "priority": 21,
+       "target": {"kind": "wander"}, "duration": 14, "do": [{"feeling": 2, "towards": "nearby", "radius": 5}]},
+      {"id": "police_arrest", "label": "Arresting a thief", "who": {"role": "police_officer"}, "when": [{"memory": "theft", "withinDays": 2}], "priority": 48,
+       "target": {"kind": "villager", "pick": "memoryActor", "event": "theft"}, "duration": 4, "cooldownDays": 0.3,
+       "do": [{"item": "food", "by": -1, "on": "target"}, {"health": -3, "on": "target"}, {"feeling": -8, "towards": "self"}, {"event": "arrest", "radius": 5}, {"log": "{actor} arrested {target}. The paperwork took longer than the crime."}]},
+      {"id": "police_fine", "label": "Issuing a fine", "who": {"role": "police_officer"}, "when": [{"item": "food", "op": "<", "value": 4}, {"chance": 0.12}], "priority": 30,
+       "target": {"kind": "villager", "filter": [{"item": "food", "op": ">=", "value": 1}], "pick": "nearest", "maxRange": 6}, "duration": 4, "cooldownDays": 0.6,
+       "do": [{"transfer": "food", "amount": 1}, {"feeling": -8, "towards": "self"}, {"log": "{actor} fined {target} one berry for looking suspicious. {target} was looking at a berry."}]},
+      {"id": "police_force", "label": "Using reasonable force", "who": {"role": "police_officer"}, "when": [{"chance": 0.04}], "priority": 38,
+       "target": {"kind": "villager", "pick": "nearest", "maxRange": 5}, "duration": 3, "cooldownDays": 1.5,
+       "do": [{"health": -7, "on": "target"}, {"feeling": -15, "towards": "self"}, {"event": "brutality", "radius": 6}, {"log": "{actor} used a reasonable amount of force. A neutral observer would have used less."}]},
+      {"id": "police_break_up", "label": "Breaking up a fight", "who": {"role": "police_officer"}, "when": [{"memory": "brawl", "withinDays": 1}], "priority": 50,
+       "target": {"kind": "villager", "pick": "memoryActor", "event": "brawl"}, "duration": 4, "cooldownDays": 0.5,
+       "do": [{"feeling": 6, "towards": "both"}, {"log": "{actor} broke up a brawl by standing in the middle and looking disappointed."}]},
+      {"id": "police_snack", "label": "Taking a snack break", "who": {"role": "police_officer"}, "when": [{"item": "food", "op": ">=", "value": 1}, {"need": "hunger", "op": ">", "value": 25}], "priority": 40,
+       "target": {"kind": "self"}, "duration": 10, "cooldownDays": 0.4,
+       "do": [{"item": "food", "by": -1}, {"need": "hunger", "by": -30}, {"log": "{actor} took a break on duty. It was a long break and it was on duty."}]}
+    ],
+    "drawback": {"label": "Fines and force", "text": "The officers fine people in berries, hit people when they feel like it, and an unpopular officer is voted out in favour of another.", "rules": ["police_fine", "police_force", "police_officer"]}
+  },
+  "start a war between two tribes": {
+    "id": "war", "title": "War", "narration": "You start a war between two tribes. The island only had one tribe, so half of it was reassigned until everybody hated everybody.",
+    "items": [{"id": "war_red", "label": "Red banner"}],
+    "gifts": [{"item": "war_red", "amount": 1, "share": 0.5}],
+    "objects": [
+      {"id": "war_red_flag", "label": "Red flag", "place": {"count": 2, "near": "anywhere"},
+       "sprite": {"palette": ["#d23a2a", "#7a4b24"], "rows": ["1000000.", "1000000.", "1000000.", "1000000.", "1.......", "1.......", "1.......", "1......."]}},
+      {"id": "war_blue_flag", "label": "Blue flag", "place": {"count": 2, "near": "anywhere"},
+       "sprite": {"palette": ["#2a5ad2", "#7a4b24"], "rows": ["1000000.", "1000000.", "1000000.", "1000000.", "1.......", "1.......", "1.......", "1......."]}}
+    ],
+    "behaviors": [
+      {"id": "war_red_raid", "label": "Raiding the blue tribe", "when": [{"item": "war_red", "op": ">=", "value": 1}, {"chance": 0.05}], "priority": 40,
+       "target": {"kind": "villager", "filter": [{"item": "war_red", "op": "<", "value": 1}], "pick": "nearest", "maxRange": 14}, "duration": 5, "cooldownDays": 0.8,
+       "do": [{"health": -7, "on": "target"}, {"transfer": "food", "amount": 1}, {"feeling": -25, "towards": "self"}, {"event": "raid", "radius": 7}, {"log": "{actor} raided {target} for food and honour, in that order."}]},
+      {"id": "war_blue_raid", "label": "Raiding the red tribe", "when": [{"item": "war_red", "op": "<", "value": 1}, {"chance": 0.05}], "priority": 40,
+       "target": {"kind": "villager", "filter": [{"item": "war_red", "op": ">=", "value": 1}], "pick": "nearest", "maxRange": 14}, "duration": 5, "cooldownDays": 0.8,
+       "do": [{"health": -7, "on": "target"}, {"transfer": "food", "amount": 1}, {"feeling": -25, "towards": "self"}, {"event": "raid", "radius": 7}, {"log": "{actor} counter-raided {target} to even the score. The score is now nobody's."}]},
+      {"id": "war_retaliate", "label": "Hitting back", "when": [{"memory": "raid", "withinDays": 1}], "priority": 46,
+       "target": {"kind": "villager", "pick": "memoryActor", "event": "raid"}, "duration": 4, "cooldownDays": 1,
+       "do": [{"health": -6, "on": "target"}, {"health": -2}, {"feeling": -10, "towards": "both"}, {"log": "{actor} hit {target} with a stick that had been a tool until the war began."}]},
+      {"id": "war_rally_red", "label": "Rallying round the red flag", "when": [{"item": "war_red", "op": ">=", "value": 1}, {"chance": 0.1}], "priority": 22,
+       "target": {"kind": "object", "object": "war_red_flag", "pick": "nearest", "maxRange": 40}, "duration": 12, "cooldownDays": 1,
+       "do": [{"feeling": 3, "towards": "nearby", "radius": 4}, {"log": "{actor} saluted the red flag, which was a shirt."}]},
+      {"id": "war_rally_blue", "label": "Rallying round the blue flag", "when": [{"item": "war_red", "op": "<", "value": 1}, {"chance": 0.1}], "priority": 22,
+       "target": {"kind": "object", "object": "war_blue_flag", "pick": "nearest", "maxRange": 40}, "duration": 12, "cooldownDays": 1,
+       "do": [{"feeling": 3, "towards": "nearby", "radius": 4}, {"log": "{actor} saluted the blue flag, which was a different shirt."}]}
+    ],
+    "drawback": {"label": "Raids and revenge", "text": "Each tribe raids the other for food, victims hit back, and anyone born on the island joins the blue tribe by default.", "rules": ["war_red_raid", "war_blue_raid", "war_retaliate"]}
+  },
+  "hold a festival": {
+    "id": "festival", "title": "Festival", "narration": "You hold a festival. For three days the island has food, music and no plan for the morning after.",
+    "items": [{"id": "festival_hangover", "label": "Hangover"}],
+    "objects": [
+      {"id": "festival_table", "label": "Feast table", "place": {"count": 4, "near": "center"}, "lifetimeDays": 3.5,
+       "stock": {"item": "food", "amount": 12, "max": 12, "regrowPerDay": 0},
+       "sprite": {"palette": ["#7a4b24", "#c79a5b", "#d23a2a", "#ffd24a", "#ffffff"], "rows": ["2.3.2.3.", ".2.3.2.3", "........", "..3.4.2.", "11111111", "01111110", ".0....0.", ".0....0."]}}
+    ],
+    "behaviors": [
+      {"id": "festival_feast", "label": "Feasting", "when": [{"need": "hunger", "op": ">", "value": 25}], "priority": 48,
+       "urgency": {"need": "hunger", "scale": 0.3},
+       "target": {"kind": "object", "object": "festival_table", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest", "maxRange": 45}, "duration": 8,
+       "do": [{"fromStock": "food", "amount": 2}, {"feeling": 3, "towards": "nearby", "radius": 3}]},
+      {"id": "festival_dance", "label": "Dancing", "when": [{"chance": 0.35}], "priority": 35,
+       "target": {"kind": "object", "object": "festival_table", "pick": "nearest", "maxRange": 45}, "duration": 14, "cooldownDays": 0.5,
+       "do": [{"feeling": 6, "towards": "nearby", "radius": 4}, {"item": "festival_hangover", "by": 1}, {"need": "tiredness", "by": 5}, {"log": "{actor} danced with real commitment and no rhythm."}]},
+      {"id": "festival_sleep_off", "label": "Sleeping off the festival", "when": [{"item": "festival_hangover", "op": ">=", "value": 2}], "priority": 62,
+       "target": {"kind": "self"}, "duration": 25, "do": [{"item": "festival_hangover", "by": -5}, {"health": -1}, {"log": "{actor} woke up with a hangover and a vague memory of making a speech."}]},
+      {"id": "festival_quarrel", "label": "Quarrelling about the music", "when": [{"item": "festival_hangover", "op": ">=", "value": 1}, {"chance": 0.1}], "priority": 34,
+       "target": {"kind": "villager", "pick": "nearest", "maxRange": 5}, "duration": 4, "cooldownDays": 1,
+       "do": [{"feeling": -6, "towards": "both"}, {"health": -2, "on": "target"}, {"log": "{actor} and {target} disagreed about the drumming. It was a loud disagreement."}]}
+    ],
+    "drawback": {"label": "Hangovers", "text": "People dance until they drop, wake up with a hangover that costs them a day, and fall out over the music.", "rules": ["festival_sleep_off", "festival_quarrel", "festival_dance"]}
+  },
+  "start a cult of the tallest tree": {
+    "id": "cult", "title": "Tree cult", "narration": "You start a cult of the tallest tree. It is not the tallest tree, but nobody has brought a ruler.",
+    "traits": [{"id": "cult_devotee", "label": "Devotee of the tree", "share": 0.3}],
+    "objects": [
+      {"id": "cult_tree", "label": "The tallest tree, allegedly", "place": {"count": 1, "near": "center"},
+       "stock": {"item": "food", "amount": 4, "max": 40, "regrowPerDay": 0.4},
+       "sprite": {"palette": ["#1f5c33", "#2e8048", "#6b4a2b", "#ffd24a"], "rows": ["...33...", "...00...", "..0110..", "...00...", "..0110..", ".011110.", "...22...", "...22..."]}}
+    ],
+    "behaviors": [
+      {"id": "cult_worship", "label": "Hugging the tallest tree", "who": {"trait": "cult_devotee"}, "priority": 31,
+       "target": {"kind": "object", "object": "cult_tree", "pick": "nearest"}, "duration": 28, "cooldownDays": 1,
+       "do": [{"feeling": 4, "towards": "nearby", "radius": 4}, {"need": "tiredness", "by": 8}, {"log": "{actor} hugged the tallest tree for an hour. It did not hug back, which was taken as a sign."}]},
+      {"id": "cult_offering", "label": "Leaving an offering", "who": {"trait": "cult_devotee"}, "when": [{"item": "food", "op": ">=", "value": 2}], "priority": 29,
+       "target": {"kind": "object", "object": "cult_tree", "pick": "nearest"}, "duration": 6, "cooldownDays": 0.7,
+       "do": [{"toStock": "food", "amount": 1}, {"feeling": 2, "towards": "nearby", "radius": 3}, {"log": "{actor} left a berry at the foot of the tree. A bird took it, and everyone agreed that this meant yes."}]},
+      {"id": "cult_blessing", "label": "Receiving a blessed nut", "who": {"trait": "cult_devotee"}, "when": [{"need": "hunger", "op": ">", "value": 45}], "priority": 38,
+       "target": {"kind": "object", "object": "cult_tree", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest"}, "duration": 6,
+       "do": [{"fromStock": "food", "amount": 1}]},
+      {"id": "cult_preach", "label": "Spreading the word", "who": {"trait": "cult_devotee"}, "when": [{"chance": 0.12}], "priority": 27,
+       "target": {"kind": "villager", "pick": "nearest", "maxRange": 6}, "duration": 8, "cooldownDays": 0.7,
+       "do": [{"addTrait": "cult_devotee", "on": "target"}, {"feeling": -3, "towards": "self"}, {"log": "{actor} told {target} the good news about the tree. {target} was not given a choice."}]},
+      {"id": "cult_doubt", "label": "Having doubts", "who": {"trait": "cult_devotee"}, "when": [{"chance": 0.02}], "priority": 20,
+       "target": {"kind": "self"}, "duration": 6, "cooldownDays": 3,
+       "do": [{"removeTrait": "cult_devotee"}, {"log": "{actor} left the cult and now has opinions about forests."}]}
+    ],
+    "drawback": {"label": "Offerings and hugging", "text": "Devotees give berries to a tree, spend hours hugging it, and press the faith on everyone they meet.", "rules": ["cult_offering", "cult_worship", "cult_preach"]}
+  },
+  "invent beds": {
+    "id": "bed", "title": "Beds", "narration": "You invent beds. Villagers lie down in them with the quiet satisfaction of people who used to sleep wherever they fell over.",
+    "objects": [
+      {"id": "bed_frame", "label": "Bed", "place": {"count": 26, "near": "villagers"},
+       "sprite": {"palette": ["#a33a3a", "#f0e6d0", "#7a4b24", "#6a8fd8"], "rows": ["........", "........", "........", "2......2", "21100002", "21100002", "22222222", "2......2"]}}
+    ],
+    "behaviors": [
+      {"id": "bed_sleep", "label": "Sleeping in a bed", "when": [{"night": true}, {"need": "tiredness", "op": ">", "value": 20}], "priority": 64,
+       "target": {"kind": "object", "object": "bed_frame", "pick": "nearest", "maxRange": 25}, "duration": 25,
+       "do": [{"need": "tiredness", "by": -55}, {"health": 8}]},
+      {"id": "bed_nap", "label": "Napping in a bed", "when": [{"need": "tiredness", "op": ">", "value": 50}], "priority": 52,
+       "target": {"kind": "object", "object": "bed_frame", "pick": "nearest", "maxRange": 25}, "duration": 18,
+       "do": [{"need": "tiredness", "by": -45}, {"health": 5}]},
+      {"id": "bed_lie_in", "label": "Refusing to get up", "when": [{"night": false}, {"need": "tiredness", "op": "<", "value": 35}, {"chance": 0.08}], "priority": 47,
+       "target": {"kind": "object", "object": "bed_frame", "pick": "nearest", "maxRange": 25}, "duration": 28, "cooldownDays": 0.6,
+       "do": [{"need": "hunger", "by": 10}, {"log": "{actor} stayed in bed through a perfectly good morning. The morning carried on without them."}]},
+      {"id": "bed_fall", "label": "Falling out of bed", "when": [{"nearObject": "bed_frame", "radius": 1.5}, {"chance": 0.05}], "priority": 44,
+       "target": {"kind": "self"}, "duration": 2, "do": [{"health": -3}, {"log": "{actor} fell out of bed and blamed the bed."}]},
+      {"id": "bed_hog", "label": "Hogging the bed", "when": [{"nearObject": "bed_frame", "radius": 2}, {"chance": 0.1}], "priority": 32,
+       "target": {"kind": "villager", "pick": "nearest", "maxRange": 3}, "duration": 5, "cooldownDays": 0.7,
+       "do": [{"feeling": -5, "towards": "both"}, {"log": "{actor} took the whole bed, and {target} took it personally."}]}
+    ],
+    "drawback": {"label": "Lie-ins and bed fights", "text": "Beds are so good that people skip mornings, fall out of them and argue over who gets the blanket.", "rules": ["bed_lie_in", "bed_fall", "bed_hog"]}
+  },
+  "invent medicine": {
+    "id": "medicine", "title": "Medicine", "narration": "You invent medicine. Within the hour the first patient is cured of something they did not have.",
+    "items": [{"id": "medicine_herb", "label": "Herbs"}],
+    "objects": [
+      {"id": "medicine_patch", "label": "Herb patch", "place": {"count": 16, "near": "anywhere"},
+       "stock": {"item": "medicine_herb", "amount": 2, "max": 4, "regrowPerDay": 0.7}, "respawn": {"perDay": 0.8, "max": 18},
+       "sprite": {"palette": ["#2e8048", "#7ccf4a", "#d94a8c", "#ffffff"], "rows": ["...2....", "..232...", "...0.1..", "1..0.0..", ".00010..", "..000...", "..0.0...", ".0...0.."]}}
+    ],
+    "behaviors": [
+      {"id": "medicine_gather", "label": "Gathering herbs", "when": [{"item": "medicine_herb", "op": "<", "value": 2}, {"chance": 0.35}], "priority": 21,
+       "target": {"kind": "object", "object": "medicine_patch", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest"}, "duration": 8,
+       "do": [{"fromStock": "medicine_herb", "amount": 1}]},
+      {"id": "medicine_take", "label": "Taking a remedy", "when": [{"item": "medicine_herb", "op": ">=", "value": 1}, {"health": true, "op": "<", "value": 70}], "priority": 62,
+       "target": {"kind": "self"}, "duration": 5, "do": [{"item": "medicine_herb", "by": -1}, {"health": 40}, {"need": "hunger", "by": 6}]},
+      {"id": "medicine_bad_batch", "label": "Drinking a bad batch", "when": [{"item": "medicine_herb", "op": ">=", "value": 1}, {"chance": 0.02}], "priority": 45,
+       "target": {"kind": "self"}, "duration": 4, "do": [{"item": "medicine_herb", "by": -1}, {"health": -22}, {"log": "{actor} drank a remedy of mushroom and optimism. It was mostly mushroom."}]},
+      {"id": "medicine_worry", "label": "Self-diagnosing", "when": [{"item": "medicine_herb", "op": ">=", "value": 1}, {"health": true, "op": ">=", "value": 90}, {"chance": 0.07}], "priority": 30,
+       "target": {"kind": "self"}, "duration": 6, "do": [{"item": "medicine_herb", "by": -1}, {"need": "hunger", "by": 10}, {"log": "{actor} took a remedy for a serious condition known as feeling fine."}]},
+      {"id": "medicine_quack", "label": "Selling a miracle cure", "when": [{"chance": 0.03}], "priority": 28,
+       "target": {"kind": "villager", "filter": [{"item": "food", "op": ">=", "value": 1}], "pick": "nearest", "maxRange": 6}, "duration": 5, "cooldownDays": 3,
+       "do": [{"transfer": "food", "amount": 2}, {"feeling": -6, "towards": "self"}, {"log": "{actor} sold {target} a miracle cure for two berries. It cured the berries, which are gone."}]}
+    ],
+    "drawback": {"label": "Bad batches and quacks", "text": "Some remedies are poison, healthy people waste herbs on imaginary ailments, and quacks sell cures for berries.", "rules": ["medicine_bad_batch", "medicine_worry", "medicine_quack"]}
+  },
+  "make it rain frogs": {
+    "id": "frogs", "title": "Frogs", "narration": "It rains frogs. Nobody is hurt, which is the only good news, and the frogs seem fine as well.",
+    "objects": [
+      {"id": "frog", "label": "Frog", "place": {"count": 70, "near": "anywhere"}, "lifetimeDays": 7,
+       "stock": {"item": "food", "amount": 1, "max": 1, "regrowPerDay": 0},
+       "aura": {"radius": 2, "need": "tiredness", "perDay": 10},
+       "sprite": {"palette": ["#3fa04a", "#7ccf4a", "#ffffff", "#222222"], "rows": ["........", ".22..22.", ".23..32.", "..0000..", ".011110.", "01111110", "0.1..1.0", "00....00"]}}
+    ],
+    "behaviors": [
+      {"id": "frog_eat", "label": "Eating a frog", "when": [{"need": "hunger", "op": ">", "value": 45}], "priority": 25,
+       "urgency": {"need": "hunger", "scale": 0.5},
+       "target": {"kind": "object", "object": "frog", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest", "maxRange": 10}, "duration": 7,
+       "do": [{"fromStock": "food", "amount": 1}, {"remove": "target"}, {"log": "{actor} ate a frog. The frog was not consulted."}]},
+      {"id": "frog_name", "label": "Naming a frog", "when": [{"chance": 0.07}], "priority": 17,
+       "target": {"kind": "object", "object": "frog", "pick": "nearest", "maxRange": 10}, "duration": 8, "cooldownDays": 2,
+       "do": [{"feeling": 3, "towards": "nearby", "radius": 3}, {"log": "{actor} named a frog Gerald. There are now several frogs called Gerald."}]},
+      {"id": "frog_slip", "label": "Slipping on a frog", "when": [{"nearObject": "frog", "radius": 1.2}, {"chance": 0.08}], "priority": 42,
+       "target": {"kind": "self"}, "duration": 2, "do": [{"health": -3}, {"log": "{actor} stepped on a frog and then on a second frog. The frogs were fine."}]},
+      {"id": "frog_chorus", "label": "Failing to sleep through the frogs", "when": [{"night": true}, {"nearObject": "frog", "radius": 5}, {"chance": 0.2}], "priority": 63,
+       "target": {"kind": "self"}, "duration": 3, "do": [{"need": "tiredness", "by": 6}, {"log": "The frogs sang all night and {actor} heard every word."}]},
+      {"id": "frog_kiss", "label": "Kissing a frog", "when": [{"chance": 0.02}], "priority": 16,
+       "target": {"kind": "object", "object": "frog", "pick": "nearest", "maxRange": 10}, "duration": 5, "cooldownDays": 4,
+       "do": [{"health": -1}, {"log": "{actor} kissed a frog in case it was important. It was just a frog, as it had said."}]}
+    ],
+    "drawback": {"label": "Croaking and slipping", "text": "The frogs croak all night and everyone slips on them. They are edible, which helps a little.", "rules": ["frog", "frog_slip", "frog_chorus"]}
+  },
+  "give everyone a nuke": {
+    "id": "nukes", "title": "A nuke for everyone", "narration": "Every villager now owns a remote control with one nuke on it. For a while, the island has never been more polite.",
+    "items": [{"id": "nuke_remote", "label": "Nuke remote"}],
+    "gifts": [{"item": "nuke_remote", "amount": 1}],
+    "objects": [
+      {"id": "mushroom_cloud", "label": "Mushroom cloud", "place": {"count": 0, "near": "anywhere"}, "lifetimeDays": 1,
+       "hurts": {"radius": 5, "perDay": 400},
+       "spread": {"onto": ["tree", "bush"], "becomes": "crater", "chancePerDay": 10, "radius": 5},
+       "sprite": {"palette": ["#fff1a8", "#f28c28", "#8a8a8a"], "rows": ["..0000..", ".011110.", "01111110", "01111110", ".022220.", "...22...", "...22...", "..2222.."]}},
+      {"id": "crater", "label": "Glowing crater", "place": {"count": 0, "near": "anywhere"}, "lifetimeDays": 12,
+       "hurts": {"radius": 1, "perDay": 15},
+       "sprite": {"palette": ["#3a3a32", "#7dff5a"], "rows": ["........", "..0000..", ".000000.", ".001100.", ".001100.", ".000000.", "..0000..", "........"]}}
+    ],
+    "behaviors": [
+      {"id": "deterrence", "label": "Being extremely polite", "when": [{"item": "nuke_remote", "op": ">=", "value": 1}, {"chance": 0.08}], "priority": 16,
+       "target": {"kind": "villager", "pick": "nearest", "maxRange": 8}, "duration": 8, "cooldownDays": 1,
+       "do": [{"feeling": 6, "towards": "both"}]},
+      {"id": "press_in_anger", "label": "Pressing the button", "when": [{"item": "nuke_remote", "op": ">=", "value": 1}, {"chance": 0.0002}], "priority": 80,
+       "target": {"kind": "villager", "pick": "lowestFeeling", "remote": true}, "duration": 3,
+       "do": [{"spawn": "mushroom_cloud", "at": "target"}, {"item": "nuke_remote", "by": -1}, {"event": "nuke", "radius": 30}, {"log": "{actor} looked across the island at {target} and pressed the button."}]},
+      {"id": "press_in_panic", "label": "Pressing the button in a panic", "when": [{"item": "nuke_remote", "op": ">=", "value": 1}, {"memory": "nuke", "withinDays": 1}, {"chance": 0.01}], "priority": 85,
+       "target": {"kind": "villager", "pick": "memoryActor", "event": "nuke", "remote": true}, "duration": 1,
+       "do": [{"spawn": "mushroom_cloud", "at": "target"}, {"item": "nuke_remote", "by": -1}, {"event": "nuke", "radius": 30}, {"log": "{actor} saw the flash and nuked {target} right back."}]}
+    ],
+    "drawback": {"label": "Mutually assured everything", "text": "Everyone is suddenly very polite, until one person presses the button and everyone retaliates.", "rules": ["press_in_anger", "press_in_panic", "mushroom_cloud"]}
+  },
+  "everyone wears hats": {
+    "id": "hats", "title": "Hats", "narration": "Everyone gets a hat. Within the hour there is a pecking order, and it is based, naturally, on hats.",
+    "items": [{"id": "hats_hat", "label": "Hat"}, {"id": "hats_fancy", "label": "Fancy hat"}],
+    "gifts": [{"item": "hats_hat", "amount": 1}, {"item": "hats_fancy", "amount": 1, "share": 0.2}],
+    "behaviors": [
+      {"id": "hats_tip", "label": "Tipping a hat", "when": [{"item": "hats_hat", "op": ">=", "value": 1}, {"chance": 0.15}], "priority": 17,
+       "target": {"kind": "villager", "pick": "nearest", "maxRange": 6}, "duration": 4, "cooldownDays": 0.3,
+       "do": [{"feeling": 4, "towards": "both"}]},
+      {"id": "hats_snub", "label": "Looking down on the hatless", "when": [{"item": "hats_fancy", "op": ">=", "value": 1}, {"chance": 0.1}], "priority": 19,
+       "target": {"kind": "villager", "filter": [{"item": "hats_fancy", "op": "<", "value": 1}], "pick": "nearest", "maxRange": 6}, "duration": 5, "cooldownDays": 0.5,
+       "do": [{"feeling": -6, "towards": "self"}, {"log": "{actor} looked at {target}'s hat and said nothing, loudly."}]},
+      {"id": "hats_envy", "label": "Taking a fancier hat", "when": [{"item": "hats_fancy", "op": "<", "value": 1}, {"chance": 0.06}], "priority": 36,
+       "target": {"kind": "villager", "filter": [{"item": "hats_fancy", "op": ">=", "value": 1}], "pick": "nearest", "maxRange": 8}, "duration": 4, "cooldownDays": 1,
+       "do": [{"transfer": "hats_fancy", "amount": 1}, {"feeling": -14, "towards": "self"}, {"event": "hat_theft", "radius": 5}, {"log": "{actor} took {target}'s good hat in what is now called a hat-based incident."}]},
+      {"id": "hats_wind", "label": "Chasing a hat", "when": [{"item": "hats_hat", "op": ">=", "value": 1}, {"chance": 0.05}], "priority": 41,
+       "target": {"kind": "wander"}, "duration": 10, "do": [{"item": "hats_hat", "by": -1}, {"need": "tiredness", "by": 8}, {"log": "A gust of wind took {actor}'s hat and {actor} followed it a long way."}]},
+      {"id": "hats_make", "label": "Making a replacement hat", "when": [{"item": "hats_hat", "op": "<", "value": 1}], "priority": 31,
+       "target": {"kind": "object", "object": "tree", "pick": "nearest"}, "duration": 12,
+       "do": [{"item": "hats_hat", "by": 1}, {"log": "{actor} made a hat out of a tree. The tree was asked and said nothing."}]},
+      {"id": "hats_sunburn", "label": "Getting sunburnt", "when": [{"item": "hats_hat", "op": "<", "value": 1}, {"night": false}, {"chance": 0.2}], "priority": 39,
+       "target": {"kind": "self"}, "duration": 3, "do": [{"health": -3}, {"log": "{actor} went hatless in the sun and is now the colour of a berry."}]}
+    ],
+    "drawback": {"label": "Hat politics", "text": "The fancy hats breed snobbery and theft, the wind takes hats away, and the hatless get sunburnt.", "rules": ["hats_snub", "hats_envy", "hats_sunburn"]}
+  },
+  "teach squirrels to talk": {
+    "id": "squirrels", "title": "Talking squirrels", "narration": "You teach squirrels to talk. The first thing they say is a price, and the second is a list of names.",
+    "objects": [
+      {"id": "squirrel", "label": "Talking squirrel", "place": {"count": 28, "near": "anywhere"},
+       "stock": {"item": "food", "amount": 2, "max": 4, "regrowPerDay": 0.6},
+       "sprite": {"palette": ["#a0522d", "#e8c89a", "#3a2412", "#ffffff"], "rows": ["......0.", ".....00.", "....0.0.", "..0.0.0.", ".010.00.", ".0110.0.", "..000.0.", "..0.0.0."]}}
+    ],
+    "behaviors": [
+      {"id": "squirrel_tip", "label": "Following a squirrel's nut tip", "when": [{"item": "food", "op": "<", "value": 3}], "priority": 24,
+       "urgency": {"need": "hunger", "scale": 0.55},
+       "target": {"kind": "object", "object": "squirrel", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest"}, "duration": 8,
+       "do": [{"fromStock": "food", "amount": 2}]},
+      {"id": "squirrel_toll", "label": "Paying a squirrel's toll", "when": [{"item": "food", "op": ">=", "value": 2}, {"chance": 0.04}], "priority": 33,
+       "target": {"kind": "object", "object": "squirrel", "pick": "nearest", "maxRange": 12}, "duration": 6, "cooldownDays": 0.6,
+       "do": [{"toStock": "food", "amount": 1}, {"log": "{actor} paid a squirrel a berry to be left alone. It was a short conversation and an expensive one."}]},
+      {"id": "squirrel_gossip", "label": "Hearing squirrel gossip", "when": [{"chance": 0.07}], "priority": 20,
+       "target": {"kind": "object", "object": "squirrel", "pick": "nearest", "maxRange": 10}, "duration": 8, "cooldownDays": 0.7,
+       "do": [{"feeling": -2, "towards": "nearby", "radius": 4}, {"event": "rumour", "radius": 4}, {"log": "A squirrel told {actor} what everyone else had said behind their back. Nobody has been the same since, including the squirrel."}]},
+      {"id": "squirrel_chat", "label": "Chatting with a squirrel", "when": [{"chance": 0.08}], "priority": 16,
+       "target": {"kind": "object", "object": "squirrel", "pick": "nearest", "maxRange": 10}, "duration": 12, "cooldownDays": 1,
+       "do": [{"feeling": 2, "towards": "nearby", "radius": 3}, {"log": "{actor} had a long talk with a squirrel and came away feeling understood, which was not part of the plan."}]}
+    ],
+    "drawback": {"label": "Tolls and gossip", "text": "Squirrels charge berries for their advice and repeat everything they overhear, which does nothing for friendships.", "rules": ["squirrel_toll", "squirrel_gossip"]}
+  }
+}
+</script>
+<script type="application/json" id="aliases-data">
+{
+  "unlock fire": {
+    "phrases": ["discover fire", "give them fire", "invent fire", "make fire", "create fire", "introduce fire", "bring fire", "start a fire", "light a fire", "let there be fire", "teach them fire", "fire", "campfire", "campfires"],
+    "keywords": []
+  },
+  "introduce crime": {
+    "phrases": ["invent crime", "create crime", "make crime", "give them crime", "add crime", "start crime", "crime wave", "crime", "stealing", "invent stealing", "theft", "invent theft", "thieves", "invent thieves", "thief"],
+    "keywords": []
+  },
+  "make a government": {
+    "phrases": ["invent government", "create a government", "start a government", "form a government", "give them a government", "introduce government", "government", "governments", "elect a chief", "appoint a chief", "invent politics", "politics", "invent taxes", "taxes"],
+    "keywords": []
+  },
+  "invent farming": {
+    "phrases": ["farming", "farm", "farms", "start farming", "teach farming", "teach them farming", "teach them to farm", "learn farming", "invent agriculture", "agriculture", "grow crops", "plant crops", "invent crops", "crops", "plant seeds", "invent the farm"],
+    "keywords": [["grow", "crop"], ["plant", "crop"]]
+  },
+  "domesticate chickens": {
+    "phrases": ["chickens", "chicken", "hens", "give them chickens", "invent chickens", "make chickens", "tame chickens", "tame hens", "add chickens", "bring chickens", "domesticate hens", "keep chickens"],
+    "keywords": []
+  },
+  "teach them to fish": {
+    "phrases": ["teach fish", "teach fishing", "teach them fishing", "fishing", "fish", "invent fishing", "learn fishing", "go fishing", "fishing rods", "fishing rod", "invent fish"],
+    "keywords": []
+  },
+  "open a bakery": {
+    "phrases": ["bakery", "bakeries", "build a bakery", "bake bread", "baking bread", "bread", "invent bread", "invent baking", "baking", "make bread", "give them bread", "baker", "bakers", "open a bread shop", "bread shop"],
+    "keywords": []
+  },
+  "erupt the volcano": {
+    "phrases": ["volcano", "volcanoes", "erupt volcano", "volcano erupts", "lava", "make lava", "add a volcano", "create a volcano", "trigger the volcano", "volcanic eruption", "eruption"],
+    "keywords": [["volcano", "erupt"]]
+  },
+  "send a plague": {
+    "phrases": ["plague", "plagues", "bring plague", "start a plague", "send disease", "disease", "pandemic", "epidemic", "spread disease", "send a virus", "virus", "black death", "give them the plague", "make everyone sick", "outbreak"],
+    "keywords": []
+  },
+  "flood the island": {
+    "phrases": ["flood", "floods", "send a flood", "make a flood", "great flood", "tsunami", "make a tsunami", "send a tsunami", "tidal wave", "send a tidal wave", "flood island"],
+    "keywords": []
+  },
+  "drop a meteor": {
+    "phrases": ["meteor", "meteors", "meteorite", "asteroid", "comet", "send a meteor", "send an asteroid", "crash a meteor", "meteor strike", "meteor shower", "drop an asteroid", "space rock", "drop a rock from space"],
+    "keywords": []
+  },
+  "send locusts": {
+    "phrases": ["locusts", "locust", "locust swarm", "swarm of locusts", "summon locusts", "invent locusts", "grasshoppers", "send grasshoppers"],
+    "keywords": []
+  },
+  "invent marriage": {
+    "phrases": ["marriage", "marriages", "marry", "married", "get married", "wedding", "weddings", "invent weddings", "start marriage", "create marriage", "marry everyone", "matrimony", "invent matrimony"],
+    "keywords": []
+  },
+  "invent money": {
+    "phrases": ["money", "coins", "coin", "currency", "invent currency", "create money", "make money", "invent coins", "invent shopping", "shops", "markets", "market", "economy", "invent the economy", "capitalism", "invent trade", "give them money"],
+    "keywords": []
+  },
+  "build a school": {
+    "phrases": ["school", "schools", "invent school", "open a school", "invent education", "education", "teachers", "teacher", "invent teachers", "teach reading", "teach them to read", "invent reading", "literacy"],
+    "keywords": []
+  },
+  "hire police": {
+    "phrases": ["police", "cops", "cop", "police force", "hire cops", "hire a policeman", "policeman", "policemen", "invent police", "invent the police", "create police", "give them police", "law enforcement", "police officers", "police officer", "sheriff", "hire a sheriff"],
+    "keywords": []
+  },
+  "start a war between two tribes": {
+    "phrases": ["war", "wars", "start a war", "make war", "invent war", "start war", "declare war", "tribal war", "war between tribes", "tribes at war", "invent warfare", "warfare", "start a battle", "battle"],
+    "keywords": [["war", "tribe"], ["tribe", "fight"]]
+  },
+  "hold a festival": {
+    "phrases": ["festival", "festivals", "party", "throw a party", "have a party", "hold a party", "host a party", "carnival", "celebration", "celebrate", "feast", "a feast", "throw a festival", "start a festival", "host a festival", "invent parties", "invent festivals", "parade"],
+    "keywords": []
+  },
+  "start a cult of the tallest tree": {
+    "phrases": ["cult", "cults", "start a cult", "tree cult", "tallest tree", "cult of the tree", "worship the tallest tree", "worship a tree", "worship trees", "tree worship"],
+    "keywords": [["cult", "tree"]]
+  },
+  "invent beds": {
+    "phrases": ["beds", "bed", "give them beds", "invent a bed", "make beds", "build beds", "create beds", "pillows", "invent pillows", "mattress", "mattresses", "comfy beds", "invent sleep", "invent sleeping"],
+    "keywords": []
+  },
+  "invent medicine": {
+    "phrases": ["medicine", "medicines", "medicinal herbs", "doctor", "doctors", "invent doctors", "hire a doctor", "hospital", "build a hospital", "invent healing", "healing", "herbs", "invent herbs", "remedies", "remedy", "invent pills", "pills"],
+    "keywords": []
+  },
+  "make it rain frogs": {
+    "phrases": ["rain frogs", "frogs", "frog", "frog rain", "rain of frogs", "shower of frogs", "make frogs", "send frogs", "drop frogs", "summon frogs", "frog storm", "invent frogs", "give them frogs", "frogs from the sky"],
+    "keywords": [["frog", "sky"]]
+  },
+  "give everyone a nuke": {
+    "phrases": ["nuke", "nukes", "nuclear", "nuclear bomb", "nuclear bombs", "nuclear weapons", "atom bomb", "atomic bomb", "invent nukes", "invent the bomb", "the bomb", "bomb", "bombs", "everyone gets a nuke", "nukes for everyone", "give them nukes"],
+    "keywords": []
+  },
+  "everyone wears hats": {
+    "phrases": ["hats", "hat", "give everyone hats", "give everyone a hat", "invent hats", "invent the hat", "everyone gets a hat", "hats for everyone", "everybody wears hats", "everyone wears a hat", "wear hats", "top hats", "fancy hats"],
+    "keywords": [["hat", "everyone"], ["hat", "wear"], ["hat", "everybody"]]
+  },
+  "teach squirrels to talk": {
+    "phrases": ["talking squirrels", "squirrels talking", "make squirrels talk", "squirrels that talk", "teach squirrels to speak", "squirrels speak", "give squirrels speech", "make squirrels speak", "squirrel language", "talking squirrel"],
+    "keywords": [["squirrel", "talk"], ["squirrel", "speak"], ["squirrel", "speech"], ["squirrel", "language"]]
   }
 }
 </script>
@@ -331,6 +1023,7 @@ The current world summary follows these instructions. Refer to anything it lists
 var W = 64, H = 44, TPD = 120, DPY = 12, NIGHT_START = 80, SPEED = 0.12;
 var STALE_PER_DAY = 4, STALE_MAX = 40, STALE_CEILING = 60;
 var PACKS = {};
+var ALIASES = {};
 var AI_INSTRUCTIONS = '';
 
 var dict = function () { return Object.create(null); };
@@ -884,6 +1577,84 @@ var SCENARIOS = {
     }
   }
 };
+
+// ---------- matching what people type to a library command (pure) ----------
+// Precision beats coverage: anything doubtful returns null and the Ask panel opens instead.
+var MATCH_STOP = dict(), MATCH_NEG = dict(), MATCH_EXTRA = dict();
+'the a an please kindly just now some of to and can could would you i we us me my want like let lets need should will it its there is are be so that then also really very our their them this these those for on in at with by up all'
+  .split(' ').forEach(function (w) { MATCH_STOP[w] = true; });
+'no not never none nothing nor ban bans banned stop stops end remove removed without abolish cancel undo outlaw forbid prohibit disable delete destroy eliminate extinguish rid away less fewer cure kill against dont don doesn didn won wont cant isn aren t cease halt quit enough anti'
+  .split(' ').forEach(function (w) { MATCH_NEG[w] = true; });
+function matchStem(w) {
+  if (w.length > 4 && /ies$/.test(w)) return w.slice(0, -3) + 'y';
+  if (w.length > 5 && /ing$/.test(w)) return w.slice(0, -3);
+  if (w.length > 4 && /(ch|sh|ss|x)es$/.test(w)) return w.slice(0, -2);
+  if (w.length > 3 && /s$/.test(w) && !/ss$/.test(w)) return w.slice(0, -1);
+  return w;
+}
+'make create invent discover unlock introduce give bring add start new more everyone everybody villager send build open hold get have do cast summon call release drop teach show again lots many big little first'
+  .split(' ').forEach(function (w) { MATCH_EXTRA[matchStem(w)] = true; });
+function matchTokens(text) {
+  var raw = String(text).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(), out = { neg: false, toks: [] };
+  if (!raw) return out;
+  raw.split(' ').forEach(function (w) {
+    if (MATCH_NEG[w]) out.neg = true;
+    if (!MATCH_STOP[w]) out.toks.push(matchStem(w));
+  });
+  return out;
+}
+var MATCHER = null;
+function buildMatcher() {
+  MATCHER = Object.keys(ALIASES).map(function (key) {
+    var spec = ALIASES[key], forms = [];
+    var add = function (t, isSet) { if (t.length) forms.push({ t: t, set: isSet }); };
+    add(matchTokens(key).toks, false);
+    (spec.phrases || []).forEach(function (p) { add(matchTokens(p).toks, false); });
+    (spec.keywords || []).forEach(function (ks) { add(ks.map(function (w) { return matchStem(String(w).toLowerCase()); }), true); });
+    return { key: key, forms: forms };
+  });
+}
+// indices of the typed words that a phrase (in a row) or a keyword set (in any order) accounts for, or null
+function matchForm(f, toks) {
+  var i, j;
+  if (f.set) {
+    var used = [];
+    for (i = 0; i < f.t.length; i++) {
+      var at = -1;
+      for (j = 0; j < toks.length; j++) if (toks[j] === f.t[i] && used.indexOf(j) < 0) { at = j; break; }
+      if (at < 0) return null;
+      used.push(at);
+    }
+    return used;
+  }
+  for (i = 0; i + f.t.length <= toks.length; i++) {
+    for (j = 0; j < f.t.length; j++) if (toks[i + j] !== f.t[j]) break;
+    if (j === f.t.length) { var run = []; for (j = 0; j < f.t.length; j++) run.push(i + j); return run; }
+  }
+  return null;
+}
+function matchCommand(text) {
+  if (!MATCHER) buildMatcher();
+  var p = matchTokens(text);
+  if (p.neg || !p.toks.length) return null;
+  var toks = p.toks, hits = [];
+  MATCHER.forEach(function (c) {
+    var best = null;
+    c.forms.forEach(function (f) {
+      var m = matchForm(f, toks);
+      if (!m) return;
+      var unknown = 0;
+      toks.forEach(function (w, i) { if (m.indexOf(i) < 0 && !MATCH_EXTRA[w]) unknown++; });
+      var ok = unknown <= (f.t.length >= 2 ? 1 : 0), score = f.t.length / toks.length;
+      if (!best) best = { ok: false, score: 0 };
+      if (ok && score > best.score) { best.ok = true; best.score = score; }
+    });
+    if (best) hits.push({ key: c.key, ok: best.ok, score: best.score });
+  });
+  // two different library things mentioned, or one mentioned amid other words: not understood well enough
+  if (hits.length !== 1 || !hits[0].ok) return null;
+  return { key: hits[0].key, score: Math.round(hits[0].score * 100) / 100 };
+}
 
 // ---------- the sim ----------
 function createSim(opts) {
@@ -1665,9 +2436,11 @@ function createSim(opts) {
 // BOOTSTRAP: data blocks
 // ===================================================================
 PACKS = JSON.parse(document.getElementById('packs-data').textContent);
+ALIASES = JSON.parse(document.getElementById('aliases-data').textContent);
 AI_INSTRUCTIONS = document.getElementById('ai-instructions').textContent.replace(/^\n+|\n+$/g, '');
 var LTB = window.LTB = { createSim: createSim, validatePack: validatePack, PACKS: PACKS, AI_INSTRUCTIONS: AI_INSTRUCTIONS,
-  SCENARIOS: SCENARIOS, MAX_VILLAGERS: MAX_VILLAGERS, MAX_WORDS: MAX_WORDS };
+  SCENARIOS: SCENARIOS, MAX_VILLAGERS: MAX_VILLAGERS, MAX_WORDS: MAX_WORDS, ALIASES: ALIASES, matchCommand: matchCommand,
+  library: function () { return Object.keys(PACKS).filter(function (k) { return k !== 'base'; }); } };
 
 // ===================================================================
 // UI (rendering and controls; reads the sim, never writes pack text as HTML)
@@ -1871,7 +2644,7 @@ function paused() {
 }
 function resetView() {
   lastLogN = 0; lastHud = ''; selected = null; packsShown = -1; spriteCache = {}; acc = 0;
-  $('log').textContent = ''; $('toast').hidden = true; $('ask').hidden = true; $('end').hidden = true;
+  $('log').textContent = ''; $('toast').hidden = true; $('ask').hidden = true; $('end').hidden = true; $('ideaspanel').hidden = true;
   buildTileCanvas();
   syncLog(); syncPacks(); hud();
 }
@@ -1924,6 +2697,39 @@ function showEnd() {
 }
 
 // ----- commands -----
+// the ready-made commands, and which of them this island has already had
+function isUsed(key) {
+  var id = PACKS[key].id;
+  return sim.world.packs.some(function (p) { return p.id === id; });
+}
+function unusedKeys() { return LTB.library().filter(function (k) { return !isUsed(k); }); }
+// UI-only randomness: the sim keeps its own seeded generator and never sees this one
+function uiRandom() { return Math.random(); }
+function fillSuggestions() {
+  var pool = unusedKeys(), pick = [], btns = $('suggest-btns');
+  btns.textContent = '';
+  while (pick.length < 6 && pool.length) pick.push(pool.splice(Math.floor(uiRandom() * pool.length), 1)[0]);
+  $('suggest').hidden = pick.length === 0;
+  $('suggest-line').textContent = 'That is not one of the ready-made commands. These work without any AI:';
+  pick.forEach(function (k) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.textContent = k;
+    b.addEventListener('click', function () { $('ask').hidden = true; runKey(k); });
+    btns.appendChild(b);
+  });
+}
+function fillIdeas() {
+  var list = $('ideas-list'), keys = unusedKeys();
+  list.textContent = '';
+  $('ideas-line').textContent = keys.length ? 'Ready-made commands you have not used yet. Click one to run it.' : 'You have tried every ready-made command. The island needs a lie-down.';
+  keys.forEach(function (k) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.textContent = k;
+    b.addEventListener('click', function () { $('ideaspanel').hidden = true; runKey(k); });
+    list.appendChild(b);
+  });
+}
+
 function showAsk(command) {
   var prompt = AI_INSTRUCTIONS + '\n\n# Current world\n' + sim.summary() + '\n\n# The command\n' + command;
   var pending = askTheAI(prompt, command);
@@ -1935,6 +2741,7 @@ function showAsk(command) {
   $('paste').value = '';
   $('errors').textContent = '';
   $('copy').textContent = 'Copy';
+  fillSuggestions();
   $('ask').hidden = false;
 }
 function parseAnswer(text) {
@@ -1964,32 +2771,44 @@ function applyAnswer(text) {
   syncLog(); syncPacks();
 }
 function refuse(text) { say(text, 'refusal'); toast(text); }
+// false (with a refusal shown) when no command can be taken right now
+function canCommand() {
+  var run = sim.state.run;
+  if (run.status !== 'playing') { refuse('The run is over. Press Play again to start another.'); return false; }
+  if (run.commandLimit !== null && run.commandsUsed >= run.commandLimit) {
+    refuse('You have used all ' + run.commandLimit + ' commands. Sit back and watch what you did.');
+    return false;
+  }
+  return true;
+}
+function runLibrary(key) {
+  var pack = PACKS[key];
+  if (isUsed(key)) {
+    say('Already done. The villagers are still dealing with "' + pack.title + '", and they ask you to give it a rest.', 'refusal');
+    toast('You already did that one.');
+    return;
+  }
+  var res = sim.applyPack(pack);
+  if (!res.ok) { say('The island refused: ' + res.errors.join(' '), 'refusal'); return; }
+  sim.useCommand();
+  syncLog(); syncPacks();
+  say('Taken as: ' + key, 'system');
+  toast('Taken as: ' + key + '. ' + pack.narration);
+}
+function runKey(key) {
+  if (!canCommand()) return;
+  runLibrary(key);
+}
 function submit(text) {
   var norm = String(text).trim().toLowerCase();
   if (!norm) return;
-  var run = sim.state.run;
-  if (run.status !== 'playing') { refuse('The run is over. Press Play again to start another.'); return; }
-  if (run.commandLimit !== null && run.commandsUsed >= run.commandLimit) {
-    refuse('You have used all ' + run.commandLimit + ' commands. Sit back and watch what you did.');
-    return;
-  }
+  if (!canCommand()) return;
   if (norm.split(/\s+/).length > MAX_WORDS) {
     refuse('That is a speech, not a command. Keep it to ' + MAX_WORDS + ' words or fewer.');
     return;
   }
-  if (hasOwn(PACKS, norm) && norm !== 'base') {
-    var pack = PACKS[norm];
-    if (sim.world.packs.some(function (p) { return p.id === pack.id; })) {
-      say('Already done. The villagers are still dealing with "' + pack.title + '", and they ask you to give it a rest.', 'refusal');
-      toast('You already did that one.');
-      return;
-    }
-    var res = sim.applyPack(pack);
-    if (!res.ok) { say('The island refused: ' + res.errors.join(' '), 'refusal'); return; }
-    sim.useCommand();
-    syncLog(); syncPacks();
-    return;
-  }
+  var m = matchCommand(text);
+  if (m) { runLibrary(m.key); return; }
   showAsk(String(text).trim());
 }
 
@@ -1999,6 +2818,12 @@ $('cmdbar').addEventListener('submit', function (e) {
   if (!text.trim()) return;
   box.value = '';
   submit(text);
+});
+$('ideas').addEventListener('click', function () {
+  var panel = $('ideaspanel');
+  if (!panel.hidden) { panel.hidden = true; return; }
+  fillIdeas();
+  panel.hidden = false;
 });
 $('apply').addEventListener('click', function () { applyAnswer($('paste').value); });
 $('cancel').addEventListener('click', function () { $('ask').hidden = true; });

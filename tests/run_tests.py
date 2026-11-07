@@ -5,7 +5,9 @@ Needs Python 3.12 with the playwright package and an installed Edge.
 """
 import itertools
 import pathlib
+import random
 import sys
+import time
 import traceback
 
 from playwright.sync_api import sync_playwright
@@ -88,6 +90,42 @@ HELPERS = r"""
     }
     sim.tick(ticks);
     return summarize(sim);
+  };
+})();
+"""
+
+LIB_HELPERS = r"""
+(() => {
+  window.__lib = {
+    // one command alone, free play
+    single: (key, seed, ticks) => {
+      const sim = LTB.createSim({ seed });
+      const r = sim.applyPack(LTB.PACKS[key]);
+      if (!r.ok) throw new Error(key + ': ' + r.errors.join('; '));
+      sim.tick(ticks);
+      return { alive: sim.state.alive, behaviors: Object.assign({}, sim.state.stats.behaviors), hash: sim.hash() };
+    },
+    // several commands in the given order, free play
+    combo: (keys, seed, ticks) => {
+      const sim = LTB.createSim({ seed });
+      for (const k of keys) {
+        const r = sim.applyPack(LTB.PACKS[k]);
+        if (!r.ok) throw new Error(k + ': ' + r.errors.join('; '));
+      }
+      sim.tick(ticks);
+      return { alive: sim.state.alive, hash: sim.hash() };
+    },
+    // commands in a goal run, played to the end
+    goal: (keys, seed, scenario) => {
+      const sim = LTB.createSim({ seed, scenario });
+      for (const k of keys) {
+        const r = sim.applyPack(LTB.PACKS[k]);
+        if (!r.ok) throw new Error(k + ': ' + r.errors.join('; '));
+        sim.useCommand();
+      }
+      sim.tick(144 * 120);
+      return { won: sim.state.run.status === 'won', alive: sim.state.alive, day: Math.round(sim.state.tick / 120) };
+    },
   };
 })();
 """
@@ -292,13 +330,13 @@ def main():
             ui.wait_for_timeout(200)
             first = ui.locator("#log li").first
             ok2 = "Already done" in first.inner_text() and "refusal" in (first.get_attribute("class") or "")
-            cmd.fill("make it rain frogs")
+            cmd.fill("make it rain pudding")
             cmd.press("Enter")
             ui.wait_for_timeout(200)
             visible = ui.is_visible("#ask")
             prompt = ui.input_value("#prompt")
             instr = ui.evaluate("LTB.AI_INSTRUCTIONS")
-            ok3 = visible and instr in prompt and "make it rain frogs" in prompt and ui.is_visible("#copy")
+            ok3 = visible and instr in prompt and "make it rain pudding" in prompt and ui.is_visible("#copy")
             h0 = ui.evaluate("LTB.game.sim.hash()")
             ui.fill("#paste", '{"id":"oops","title":"Oops","narration":"Oops."}')
             ui.click("#apply")
@@ -663,11 +701,11 @@ def main():
             cnt.click('#speeds button[data-speed="0"]')
             used = lambda: cnt.evaluate("LTB.game.sim.state.run.commandsUsed")
             res = {}
-            say_cmd(cnt, "make it rain frogs")
+            say_cmd(cnt, "make it rain pudding")
             res["opened"] = cnt.is_visible("#ask")
             cnt.click("#cancel")
             res["cancel"] = used()
-            say_cmd(cnt, "make it rain frogs", "not json")
+            say_cmd(cnt, "make it rain pudding", "not json")
             res["invalid"] = used()
             cnt.fill("#paste", '{"id":"oops","title":"Oops","narration":"Oops."}')
             cnt.click("#apply")
@@ -686,7 +724,7 @@ def main():
             res["ok25_ask"] = cnt.is_visible("#ask")
             cnt.click("#cancel")
             res["ok25"] = used()
-            say_cmd(cnt, "make hats", tiny(50))
+            say_cmd(cnt, "make tiny tents", tiny(50))
             res["valid"] = used()
             ok = (res["opened"] and res["cancel"] == 0 and res["invalid"] == 0 and res["invalid2"] == 0 and res["builtin"] == 1 and res["refused"] == 1
                   and not res["long_ask"] and res["long"] == 1 and res["long_msg"] and res["ok25_ask"] and res["ok25"] == 1 and res["valid"] == 2)
@@ -801,6 +839,257 @@ def main():
             return (r["ms"] < 15000 and r["minAlive"] >= 395 and r["tick"] == 1440), f"{r['ms'] / 1000:.2f} s for 1 simulated year with 400 villagers and all three packs (fewest alive {r['minAlive']})"
         check("28 speed: one year with 400 villagers and all packs under 15 seconds", t28)
 
+        # ---------- the library of ready-made commands ----------
+        page.set_default_timeout(600000)
+        page.evaluate(LIB_HELPERS)
+        LIB = page.evaluate("LTB.library()")
+        report = []  # lines for test-results/library.txt
+
+        # 29. every pack is valid, complete and uses ids nobody else uses
+        def t29():
+            r = page.evaluate("""() => {
+              const out = { bad: [], dupes: [], noSprite: [], n: 0 };
+              const seen = new Map();
+              const keys = LTB.library();
+              out.n = keys.length;
+              for (const k of keys) {
+                const p = LTB.PACKS[k];
+                const v = LTB.validatePack(p, LTB.createSim({ seed: 1 }));
+                if (!v.ok) out.bad.push(k + ': ' + v.errors.slice(0, 2).join(' | '));
+                if (!p.drawback || !String(p.drawback.text || '').trim() || !p.drawback.rules || !p.drawback.rules.length) out.bad.push(k + ': no drawback');
+                if (typeof p.narration !== 'string' || p.narration.length < 20) out.bad.push(k + ': no narration');
+                const ids = [['pack', p.id]];
+                for (const f of ['needs', 'items', 'traits', 'roles', 'objects', 'behaviors']) for (const x of (p[f] || [])) ids.push([f, x.id]);
+                for (const [kind, id] of ids) {
+                  if (seen.has(id)) out.dupes.push(id + ' in ' + seen.get(id) + ' and ' + k); else seen.set(id, k);
+                }
+                for (const o of (p.objects || [])) {
+                  if (!o.sprite || o.sprite.rows.length !== 8 || o.sprite.rows.some(r => r.length !== 8)) out.noSprite.push(k + '/' + o.id);
+                }
+              }
+              return out;
+            }""")
+            ok = r["n"] == 25 and not r["bad"] and not r["dupes"] and not r["noSprite"]
+            return ok, f"{r['n']} commands, problems {r['bad'][:2]}, duplicate ids {r['dupes'][:2]}, objects without an 8x8 sprite {r['noSprite'][:2]}"
+        check("29 library: 25 commands, all valid, each with a drawback and narration, no duplicate ids", t29)
+
+        # 30. each pack alone: no exceptions, behaviours run, people survive
+        DISASTERS = {"erupt the volcano", "send a plague", "flood the island", "drop a meteor", "send locusts", "give everyone a nuke"}
+        LSEEDS = [1, 2, 3, 4, 5, 6]
+        base6 = page.evaluate("(seeds) => seeds.map(s => { const sim = LTB.createSim({ seed: s }); sim.tick(3 * 1440); return sim.state.alive; })", LSEEDS)
+        base_avg = sum(base6) / len(base6)
+
+        def t30():
+            rows, bad = [], []
+            for k in LIB:
+                res = page.evaluate("([k, seeds]) => seeds.map(s => { try { return window.__lib.single(k, s, 3 * 1440); } catch (e) { return { error: String(e) }; } })", [k, LSEEDS])
+                errs = [x["error"] for x in res if "error" in x]
+                beh = [b["id"] for b in page.evaluate("(k) => LTB.PACKS[k].behaviors || []", k)]
+                ran = {b: sum(1 for x in res if "error" not in x and x["behaviors"].get(b, 0) > 0) for b in beh}
+                good_b = sum(1 for v in ran.values() if v >= 4)
+                alive = [x["alive"] for x in res if "error" not in x]
+                avg = sum(alive) / max(1, len(alive))
+                nz = sum(1 for a in alive if a > 0)
+                extinct = len(alive) - nz
+                ok = not errs and good_b >= 0.6 * len(beh) and (extinct <= 1 if k in DISASTERS else nz >= 4)
+                weak = [f"{b}:{v}" for b, v in ran.items() if v < 4]
+                rows.append((k, avg, good_b, len(beh), nz, weak))
+                if not ok:
+                    bad.append(f"{k}: errors {errs[:1]}, behaviours {good_b}/{len(beh)}, alive>0 on {nz}/6")
+            report.append("EACH COMMAND ALONE: 6 seeds, 3 years, free play (baseline with no command: average alive %.1f)" % base_avg)
+            report.append(f"{'command':36}{'avg alive':>10}{'vs base':>9}  {'behaviours on 4+ seeds':>24}  {'alive>0':>8}   rarely run (behaviour:seeds)")
+            for k, avg, gb, nb, nz, weak in rows:
+                report.append(f"{k:36}{avg:10.1f}{avg - base_avg:+9.1f}  {str(gb) + ' of ' + str(nb):>24}  {str(nz) + ' of 6':>8}   {' '.join(weak)}")
+            report.append("")
+            return not bad, f"{len(rows)} packs alone on 6 seeds; problems {bad[:3]}"
+        check("30 library: each pack alone for 3 years on 6 seeds runs cleanly, behaviours happen, people survive", t30)
+
+        # 31. every pair, in one order, 2 years, one seed
+        def t31():
+            pairs = [[a, b] for i, a in enumerate(LIB) for b in LIB[i + 1:]]
+            t0 = time.time()
+            bad, n = [], 0
+            for i in range(0, len(pairs), 50):
+                chunk = pairs[i:i + 50]
+                out = page.evaluate("(chunk) => chunk.map(p => { try { const r = window.__lib.combo(p, 1, 2 * 1440); return { ok: /^[0-9a-f]{16}$/.test(r.hash) }; } catch (e) { return { err: String(e).slice(0, 200) }; } })", chunk)
+                for p, o in zip(chunk, out):
+                    n += 1
+                    if "err" in o or not o["ok"]:
+                        bad.append(f"{p}: {o}")
+            dt = time.time() - t0
+            report.append(f"ALL PAIRS: {n} pairs of commands, one order, seed 1, 2 years each: {len(bad)} problems, {dt:.0f} seconds")
+            report.append("")
+            print(f"  pairs: {n} runs in {dt:.1f} s")
+            return n == 300 and not bad, f"{n} pairs in {dt:.1f} s, problems {bad[:2]}"
+        check("31 library: all 300 pairs run for 2 years with no exceptions and a working hash", t31)
+
+        # 32. random sets of five
+        def t32():
+            rng = random.Random(2024)
+            sets = [rng.sample(LIB, 5) for _ in range(40)]
+            t0 = time.time()
+            out = page.evaluate("(sets) => sets.map((p, i) => { try { const r = window.__lib.combo(p, 1 + (i % 6), 2 * 1440); return { ok: /^[0-9a-f]{16}$/.test(r.hash), alive: r.alive }; } catch (e) { return { err: String(e).slice(0, 200) }; } })", sets)
+            bad = [f"{s}: {o}" for s, o in zip(sets, out) if "err" in o or not o["ok"]]
+            dt = time.time() - t0
+            report.append(f"RANDOM SETS: 40 random sets of 5 commands, 2 years: {len(bad)} problems, {dt:.0f} seconds")
+            report.append("")
+            return len(out) == 40 and not bad, f"40 sets of five in {dt:.1f} s, problems {bad[:2]}"
+        check("32 library: 40 random sets of five commands run with no exceptions", t32)
+
+        # 33. goals: no single command wins, but a sensible set does
+        def t33():
+            rate = lambda keys, sc: page.evaluate("([keys, sc, seeds]) => seeds.map(s => window.__lib.goal(keys, s, sc))", [keys, sc, LSEEDS])
+            wins = lambda rs: sum(1 for r in rs if r["won"])
+            single, too_strong = {}, []
+            for k in LIB:
+                c, h = rate([k], "crowded"), rate([k], "hold_on")
+                single[k] = (wins(c), wins(h), [r["alive"] for r in c], [r["alive"] for r in h])
+                if wins(c) > 2 or wins(h) > 2:
+                    too_strong.append(f"{k} {wins(c)}/6 {wins(h)}/6")
+            report.append("GOALS, EACH COMMAND ALONE: 6 seeds each, wins out of 6 (limit 2)")
+            report.append(f"{'command':36}{'crowded':>9}{'hold_on':>9}   villagers at the end: crowded | hold_on")
+            for k in LIB:
+                w1, w2, p1, p2 = single[k]
+                report.append(f"{k:36}{str(w1) + '/6':>9}{str(w2) + '/6':>9}   {p1} | {p2}")
+            report.append("")
+            cands_c = [["invent farming", "domesticate chickens", "teach them to fish"],
+                       ["invent farming", "teach them to fish", "open a bakery"],
+                       ["domesticate chickens", "teach them to fish", "invent farming", "invent beds"]]
+            cands_h = [["invent farming", "domesticate chickens", "open a bakery", "drop a meteor"],
+                       ["invent farming", "drop a meteor", "domesticate chickens"],
+                       ["invent farming", "domesticate chickens", "open a bakery"]]
+            best = {}
+            for name, cands in (("crowded", cands_c), ("hold_on", cands_h)):
+                rows = [(wins(rate(s, name)), s) for s in cands]
+                best[name] = max(rows, key=lambda x: x[0])
+                report.append(f"SETS TRYING TO WIN {name.upper()} (wins out of 6, need 4):")
+                for w, s in rows:
+                    report.append(f"  {w}/6  {' + '.join(s)}")
+                report.append("")
+            ok = not too_strong and best["crowded"][0] >= 4 and best["hold_on"][0] >= 4
+            return ok, (f"single commands too strong {too_strong}; best crowded set {best['crowded'][0]}/6 ({' + '.join(best['crowded'][1])}); "
+                        f"best hold_on set {best['hold_on'][0]}/6 ({' + '.join(best['hold_on'][1])})")
+        check("33 library: no single command wins a goal, but a set of 3 to 5 wins each", t33)
+
+        SHOTS.mkdir(exist_ok=True)
+        (SHOTS / "library.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
+
+        # 34. matching what people type
+        def t34():
+            POS = {
+                "unlock fire": ["discover fire", "Give them FIRE!", "let there be fire", "please make a fire"],
+                "introduce crime": ["invent crime", "Add Crime!", "start a crime wave"],
+                "make a government": ["create a government", "elect a chief", "Government, please"],
+                "invent farming": ["teach farming", "start farming", "grow crops", "FARMING"],
+                "domesticate chickens": ["give them chickens", "tame the hens", "chickens!"],
+                "teach them to fish": ["teach fishing", "invent fishing", "go fishing"],
+                "open a bakery": ["build a bakery", "invent bread", "make bread"],
+                "erupt the volcano": ["volcano", "make the volcano erupt", "volcanic eruption"],
+                "send a plague": ["plague", "bring plague", "send a virus"],
+                "flood the island": ["flood", "send a tsunami", "make it flood"],
+                "drop a meteor": ["send an asteroid", "meteor strike", "Meteor!"],
+                "send locusts": ["locusts", "summon locusts", "a swarm of locusts"],
+                "invent marriage": ["get married", "weddings", "invent weddings"],
+                "invent money": ["currency", "create money", "invent coins"],
+                "build a school": ["open a school", "invent education", "teach them to read"],
+                "hire police": ["cops", "invent police", "hire a sheriff"],
+                "start a war between two tribes": ["declare war", "start a war", "tribal war"],
+                "hold a festival": ["throw a party", "festival", "have a party"],
+                "start a cult of the tallest tree": ["start a cult", "tree cult", "worship the tallest tree"],
+                "invent beds": ["beds", "give them beds", "invent a bed"],
+                "invent medicine": ["doctors", "build a hospital", "Medicine!"],
+                "make it rain frogs": ["rain frogs", "frogs", "send frogs"],
+                "give everyone a nuke": ["nukes for everyone", "give them nukes", "atom bomb"],
+                "everyone wears hats": ["hats", "hats for everyone", "everybody wears hats"],
+                "teach squirrels to talk": ["talking squirrels", "make squirrels talk", "teach squirrels to speak"],
+            }
+            cases = [(t, k) for k, ts in POS.items() for t in ts]
+            cases += [(k, k) for k in LIB]  # the canonical wording always works
+            cases += [("  DISCOVER   FIRE ", "unlock fire"), ("InVeNt FaRmInG!!!", "invent farming"), ("SEND... A... PLAGUE???", "send a plague"),
+                      ("hold a FESTIVAL!!!", "hold a festival"), ("Teach THEM to FISH.", "teach them to fish"), ("make it rain FROGS!!", "make it rain frogs")]
+            nulls = ["ban fire", "no more fire", "stop the fire", "remove farming", "without money", "abolish government", "never send a plague",
+                     "cure the plague", "don't flood the island", "get rid of the locusts",
+                     "fire and farming", "money and hats", "send a plague and locusts", "invent beds and medicine", "give everyone a nuke and a bakery",
+                     "make everyone purple", "hello", "what is the meaning of life", "make a tree taller", "teach squirrels to fly",
+                     "give everyone a pony", "build a spaceship", "a", "", "!!!", "fire the police", "nuke the island", "I think fire would be nice"]
+            cases += [(t, None) for t in nulls]
+            got = page.evaluate("(texts) => texts.map(t => { const m = LTB.matchCommand(t); return m ? m.key : null; })", [c[0] for c in cases])
+            wrong = [f"{c[0]!r} -> {g!r} (wanted {c[1]!r})" for c, g in zip(cases, got) if g != c[1]]
+            scored = page.evaluate("(() => { const m = LTB.matchCommand('discover fire'); return typeof m.score === 'number' && m.score > 0 && m.score <= 1; })()")
+            return len(cases) >= 60 and not wrong and scored, f"{len(cases)} assertions, wrong {wrong[:3]}"
+        check("34 matching: aliases, negations, double mentions, unrelated text and odd capitals", t34)
+
+        # 35. the UI: taken as, counter, suggestions, Ideas
+        ui3_errors = []
+
+        def t35():
+            pg = new_page(browser, ui3_errors, "?seed=2&mode=crowded")
+            pg.click('#speeds button[data-speed="0"]')
+            res = {}
+            used = lambda: pg.evaluate("LTB.game.sim.state.run.commandsUsed")
+            say_cmd(pg, "please discover fire")
+            first = pg.locator("#log li").nth(0).inner_text()
+            res["taken"] = "Taken as: unlock fire" in first
+            res["toast"] = pg.is_visible("#toast") and "Taken as: unlock fire" in pg.inner_text("#toast")
+            res["narration"] = "immediately hold it near" in pg.inner_text("#log")
+            res["count1"] = used() == 1 and pg.inner_text("#cmds") == "Commands: 1/8"
+            say_cmd(pg, "Start FARMING!!")
+            res["count2"] = used() == 2 and "Taken as: invent farming" in pg.locator("#log li").nth(0).inner_text()
+            say_cmd(pg, "discover fire")
+            res["refused"] = "Already done" in pg.locator("#log li").nth(0).inner_text() and used() == 2
+            say_cmd(pg, "ban fire")
+            res["ask"] = pg.is_visible("#ask") and used() == 2
+            btns = pg.locator("#suggest-btns button")
+            texts = btns.all_inner_texts()
+            res["six"] = len(texts) == 6 and len(set(texts)) == 6 and "unlock fire" not in texts and "invent farming" not in texts and pg.is_visible("#suggest")
+            res["paste"] = "Ask the AI" in pg.inner_text("#askbox") and pg.is_visible("#paste")
+            pick = texts[0]
+            btns.nth(0).click()
+            pg.wait_for_timeout(100)
+            res["clicked"] = (not pg.is_visible("#ask")) and used() == 3 and f"Taken as: {pick}" in pg.locator("#log li").nth(0).inner_text()
+            pg.click("#ideas")
+            lst = pg.locator("#ideas-list button").all_inner_texts()
+            res["ideas"] = pg.is_visible("#ideaspanel") and len(lst) == 22 and not ({"unlock fire", "invent farming", pick} & set(lst))
+            SHOTS.mkdir(exist_ok=True)
+            pg.screenshot(path=str(SHOTS / "ideas-list.png"))
+            target = lst[5]
+            pg.locator("#ideas-list button").nth(5).click()
+            pg.wait_for_timeout(100)
+            res["ideas_run"] = (not pg.is_visible("#ideaspanel")) and used() == 4 and f"Taken as: {target}" in pg.locator("#log li").nth(0).inner_text()
+            pg.click("#ideas")
+            lst2 = pg.locator("#ideas-list button").all_inner_texts()
+            res["ideas_shrink"] = len(lst2) == 21 and target not in lst2
+            pg.click("#ideas")
+            res["ideas_toggle"] = not pg.is_visible("#ideaspanel")
+            pg.close()
+            bad = [k for k, v in res.items() if not v]
+            return not bad, f"parts failing: {bad}" if bad else "all parts ok"
+        check("35 UI: taken as, counter, refusal, suggestions in the ask panel, and the Ideas list", t35)
+        errors.extend(ui3_errors)
+
+        # 36. text hygiene of the library
+        def t36():
+            import re
+            r = page.evaluate("""() => {
+              const lines = [], dup = [];
+              for (const k of LTB.library()) {
+                const p = LTB.PACKS[k];
+                lines.push(['narration', k, p.narration]);
+                for (const b of (p.behaviors || [])) for (const e of b.do) if (e.log) lines.push(['log', b.id, e.log]);
+              }
+              const seen = new Map();
+              for (const [kind, who, text] of lines) {
+                const t = text.trim().toLowerCase();
+                if (seen.has(t)) dup.push(who + ' repeats ' + seen.get(t)); else seen.set(t, who);
+              }
+              const tooLong = lines.filter(l => l[2].length > 300).map(l => l[1]);
+              return { n: lines.length, dup, tooLong };
+            }""")
+            src = INDEX.read_text(encoding="utf-8")
+            hygiene = ("—" not in src and "–" not in src and not re.search(r"[A-Za-z]:\\Users", src) and not re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", src))
+            return r["n"] >= 80 and not r["dup"] and not r["tooLong"] and hygiene, f"{r['n']} narration and log lines, repeats {r['dup'][:2]}, source hygiene {hygiene}"
+        check("36 library: every narration and log line is different, and the source has no dashes, paths or addresses", t36)
+
         errors.extend(ui_errors)
         errors.extend(new_errors)
         check("1b no console or page errors across the whole run", lambda: (not errors, f"{errors[:3]}"))
@@ -818,6 +1107,28 @@ def main():
         shot.wait_for_timeout(400)
         shot.screenshot(path=str(SHOTS / "all-packs-year-1.png"))
         print("screenshot: test-results/all-packs-year-1.png")
+        lshot = new_page(browser, [], "?seed=4&mode=free")
+        lshot.evaluate("""() => {
+          const g = LTB.game.sim;
+          for (const n of ['invent farming', 'domesticate chickens', 'open a bakery', 'drop a meteor', 'invent beds', 'hold a festival',
+                           'teach them to fish', 'invent money', 'hire police', 'start a cult of the tallest tree', 'teach squirrels to talk', 'make it rain frogs']) g.applyPack(LTB.PACKS[n]);
+          g.tick(240);
+          LTB.game.refresh();
+        }""")
+        lshot.click('#speeds button[data-speed="0"]')
+        lshot.wait_for_timeout(400)
+        lshot.screenshot(path=str(SHOTS / "library-packs.png"))
+        lshot2 = new_page(browser, [], "?seed=6&mode=free")
+        lshot2.evaluate("""() => {
+          const g = LTB.game.sim;
+          for (const n of ['erupt the volcano', 'flood the island', 'send locusts', 'start a war between two tribes', 'build a school', 'invent marriage', 'invent medicine', 'everyone wears hats']) g.applyPack(LTB.PACKS[n]);
+          g.tick(150);
+          LTB.game.refresh();
+        }""")
+        lshot2.click('#speeds button[data-speed="0"]')
+        lshot2.wait_for_timeout(400)
+        lshot2.screenshot(path=str(SHOTS / "library-packs-disasters.png"))
+        print("screenshots: test-results/library-packs.png, library-packs-disasters.png, ideas-list.png")
         browser.close()
 
     passed, failed = sum(results), len(results) - sum(results)
