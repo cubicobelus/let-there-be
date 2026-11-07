@@ -1,0 +1,1720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Let there be</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#10151c;color:#e8e4d8;font-family:system-ui,Segoe UI,Arial,sans-serif;font-size:14px}
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+#top{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:6px 10px;background:#1b232d;border-bottom:1px solid #2c3846}
+#top .title{font-weight:700;color:#ffd98a}
+#speeds{margin-left:auto;display:flex;gap:4px}
+button{background:#2c3846;color:#e8e4d8;border:1px solid #435468;border-radius:4px;padding:4px 10px;font:inherit;cursor:pointer}
+button:hover{background:#38485a}
+button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
+#mid{flex:1;display:flex;min-height:0}
+#stage{flex:1;position:relative;min-width:0;background:#0b0f14}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block}
+#side{width:320px;display:flex;flex-direction:column;min-height:0;background:#161d26;border-left:1px solid #2c3846;padding:8px;overflow:hidden}
+#side h2{margin:6px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:#9fb0c4}
+#packs{list-style:none;margin:0;padding:0;max-height:25%;overflow:auto}
+#packs li{margin:0 0 6px;padding:5px 7px;background:#1f2935;border-radius:4px}
+#packs b{color:#ffd98a}
+#log{list-style:none;margin:0;padding:0;overflow:auto;flex:1;min-height:0}
+#log li{padding:3px 0;border-bottom:1px solid #222c38;line-height:1.3}
+#log li.narration{color:#ffd98a;font-style:italic}
+#log li.refusal{color:#f0a0a0}
+#log li.death{color:#c9a0ff}
+#log li.system{color:#9fb0c4}
+#vpanel{position:absolute;left:8px;top:8px;max-width:240px;background:rgba(20,28,38,.92);border:1px solid #435468;border-radius:6px;padding:8px 10px;line-height:1.35}
+#vpanel h3{margin:0 0 4px;font-size:15px;color:#ffd98a}
+#vpanel div{margin:1px 0}
+#vpanel button{position:absolute;right:4px;top:4px;padding:0 6px}
+#toast{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;max-width:90%;background:rgba(20,28,38,.94);border:1px solid #b98a2c;border-radius:6px;padding:8px 12px;text-align:center;pointer-events:none}
+#cmdbar{display:flex;gap:6px;padding:8px;background:#1b232d;border-top:1px solid #2c3846}
+#cmd{flex:1;min-width:0;padding:8px 10px;font:inherit;background:#0f151c;color:#fff;border:1px solid #435468;border-radius:4px}
+#ask{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:10;padding:8px}
+#ask[hidden],#vpanel[hidden],#toast[hidden]{display:none}
+#askbox{background:#1b232d;border:1px solid #435468;border-radius:8px;padding:12px;width:min(720px,100%);max-height:100%;overflow:auto}
+#askbox h2{margin:0 0 6px;color:#ffd98a}
+#askbox p{margin:4px 0}
+#askbox textarea{width:100%;height:130px;margin:4px 0;background:#0f151c;color:#e8e4d8;border:1px solid #435468;border-radius:4px;font:12px/1.3 Consolas,monospace;padding:6px}
+#askbox .row{display:flex;gap:6px;margin:4px 0}
+#errors{margin:6px 0;padding-left:18px;color:#f0a0a0}
+@media (max-width:700px){
+ #mid{flex-direction:column}
+ #side{width:100%;height:34%;border-left:0;border-top:1px solid #2c3846}
+ #speeds{margin-left:0}
+}
+</style>
+</head>
+<body>
+<div id="app">
+ <header id="top">
+  <span class="title">Let there be</span>
+  <span id="date">Year 1, Day 1</span>
+  <span id="pop">Villagers: 50</span>
+  <span id="speeds">
+   <button data-speed="0">Pause</button><button data-speed="1" class="on">1x</button><button data-speed="4">4x</button><button data-speed="16">16x</button>
+  </span>
+ </header>
+ <main id="mid">
+  <div id="stage">
+   <canvas id="cv"></canvas>
+   <div id="vpanel" hidden></div>
+   <div id="toast" hidden></div>
+  </div>
+  <aside id="side">
+   <h2>Your doings</h2>
+   <ul id="packs"></ul>
+   <h2>The island log</h2>
+   <ul id="log"></ul>
+  </aside>
+ </main>
+ <form id="cmdbar" autocomplete="off">
+  <input id="cmd" type="text" placeholder="Speak, god..." aria-label="Command">
+  <button type="submit" id="go">Speak</button>
+ </form>
+ <div id="ask" hidden>
+  <div id="askbox">
+   <h2>Ask the AI</h2>
+   <p>Nothing is sent anywhere. Copy this prompt, give it to an AI of your choice, then paste its JSON answer below.</p>
+   <textarea id="prompt" readonly></textarea>
+   <div class="row"><button type="button" id="copy">Copy</button></div>
+   <textarea id="paste" placeholder="Paste the JSON answer here"></textarea>
+   <ul id="errors"></ul>
+   <div class="row"><button type="button" id="apply">Apply</button><button type="button" id="cancel">Cancel</button></div>
+  </div>
+ </div>
+</div>
+
+<script type="application/json" id="packs-data">
+{
+  "base": {
+    "id": "base", "title": "The island", "narration": "Fifty villagers wake up on an island with no plans whatsoever.",
+    "needs": [
+      {"id": "hunger", "label": "Hunger", "start": 20, "perDay": 30, "damageAt": 90, "damagePerDay": 25},
+      {"id": "tiredness", "label": "Tiredness", "start": 20, "perDay": 30, "damageAt": 100, "damagePerDay": 5}
+    ],
+    "items": [{"id": "food", "label": "Food"}],
+    "objects": [
+      {"id": "bush", "label": "Berry bush", "color": "#3f8f4a", "place": {"count": 80, "near": "anywhere"},
+       "stock": {"item": "food", "amount": 3, "max": 4, "regrowPerDay": 1}, "respawn": {"perDay": 1, "max": 80}},
+      {"id": "tree", "label": "Tree", "color": "#1f5c33", "place": {"count": 120, "near": "anywhere"},
+       "respawn": {"perDay": 1, "max": 120}}
+    ],
+    "behaviors": [
+      {"id": "exhausted", "label": "Collapsing", "when": [{"need": "tiredness", "op": ">", "value": 85}], "priority": 90,
+       "target": {"kind": "self"}, "duration": 25, "do": [{"need": "tiredness", "by": -50}]},
+      {"id": "sleep", "label": "Sleeping", "when": [{"night": true}, {"need": "tiredness", "op": ">", "value": 20}], "priority": 60,
+       "target": {"kind": "self"}, "duration": 25, "do": [{"need": "tiredness", "by": -35}]},
+      {"id": "eat", "label": "Eating", "when": [{"item": "food", "op": ">=", "value": 1}, {"need": "hunger", "op": ">", "value": 35}], "priority": 50,
+       "urgency": {"need": "hunger", "scale": 0.5}, "target": {"kind": "self"}, "duration": 6,
+       "do": [{"item": "food", "by": -1}, {"need": "hunger", "by": -35}]},
+      {"id": "gather", "label": "Picking berries", "when": [{"item": "food", "op": "<", "value": 3}], "priority": 20,
+       "urgency": {"need": "hunger", "scale": 0.6},
+       "target": {"kind": "object", "object": "bush", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest"}, "duration": 8,
+       "do": [{"fromStock": "food", "amount": 1}]},
+      {"id": "share", "label": "Sharing food", "when": [{"item": "food", "op": ">=", "value": 2}], "priority": 25,
+       "target": {"kind": "villager", "filter": [{"need": "hunger", "op": ">", "value": 60}, {"item": "food", "op": "<", "value": 1}, {"feeling": true, "op": ">=", "value": 0}], "pick": "nearest", "maxRange": 8},
+       "duration": 4, "do": [{"transfer": "food", "amount": -1}, {"feeling": 5, "towards": "self"}]},
+      {"id": "chat", "label": "Chatting", "when": [{"chance": 0.08}], "priority": 15,
+       "target": {"kind": "villager", "pick": "nearest", "maxRange": 8}, "duration": 12, "cooldownDays": 0.5,
+       "do": [{"feeling": 3, "towards": "both"}]},
+      {"id": "vibe", "label": "Vibing", "priority": 1, "target": {"kind": "wander"}, "duration": 10, "do": []}
+    ]
+  },
+  "unlock fire": {
+    "id": "fire", "title": "Fire", "narration": "You give them fire. They immediately hold it near the only forest they have.",
+    "objects": [
+      {"id": "campfire", "label": "Campfire", "place": {"count": 3, "near": "villagers"},
+       "aura": {"radius": 4, "need": "tiredness", "perDay": -8},
+       "spread": {"onto": ["tree", "bush"], "becomes": "wildfire", "chancePerDay": 0.03, "radius": 2.5},
+       "sprite": {"palette": ["#5b3a1e", "#e8541a", "#ffc53d"], "rows": ["........", "...1....", "..121...", "..1221..", ".12221..", ".12221..", "0011000.", ".000000."]}},
+      {"id": "wildfire", "label": "Wildfire", "place": {"count": 0, "near": "anywhere"}, "lifetimeDays": 2,
+       "hurts": {"radius": 1.5, "perDay": 30},
+       "spread": {"onto": ["tree", "bush"], "becomes": "wildfire", "chancePerDay": 0.35, "radius": 1.6},
+       "sprite": {"palette": ["#b3200f", "#f26a1b", "#ffd24a"], "rows": ["...0....", ".0.10.0.", ".01210..", "0112110.", "0122210.", "0122210.", "01222100", ".011110."]}}
+    ],
+    "behaviors": [
+      {"id": "cook", "label": "Cooking", "when": [{"item": "food", "op": ">=", "value": 1}, {"need": "hunger", "op": ">", "value": 30}], "priority": 55,
+       "urgency": {"need": "hunger", "scale": 0.5}, "target": {"kind": "object", "object": "campfire", "pick": "nearest", "maxRange": 14}, "duration": 8,
+       "do": [{"item": "food", "by": -1}, {"need": "hunger", "by": -60}]},
+      {"id": "fireside", "label": "Telling fire stories", "when": [{"night": true}, {"need": "tiredness", "op": "<", "value": 50}, {"chance": 0.2}], "priority": 62,
+       "target": {"kind": "object", "object": "campfire", "pick": "nearest", "maxRange": 14}, "duration": 20, "cooldownDays": 1,
+       "do": [{"feeling": 2, "towards": "nearby", "radius": 3}]},
+      {"id": "flee_fire", "label": "Running from fire", "when": [{"nearObject": "wildfire", "radius": 3}], "priority": 95,
+       "target": {"kind": "away", "object": "wildfire"}, "duration": 1,
+       "do": [{"event": "panic", "radius": 4}]}
+    ],
+    "drawback": {"label": "Wildfires", "text": "Campfires sometimes set the forest and the food on fire.", "rules": ["campfire", "wildfire"]}
+  },
+  "introduce crime": {
+    "id": "crime", "title": "Crime", "narration": "You invent crime. Several villagers feel seen.",
+    "traits": [{"id": "thief", "label": "Thief", "share": 0.15}],
+    "behaviors": [
+      {"id": "steal", "label": "Stealing", "who": {"trait": "thief"}, "when": [{"item": "food", "op": "<", "value": 3}], "priority": 35,
+       "target": {"kind": "villager", "filter": [{"item": "food", "op": ">=", "value": 1}], "pick": "nearest", "maxRange": 10}, "duration": 3, "cooldownDays": 0.5,
+       "do": [{"transfer": "food", "amount": 1}, {"feeling": -15, "towards": "self"}, {"event": "theft", "radius": 6}, {"log": "{actor} stole food from {target}."}]},
+      {"id": "confront", "label": "Glaring accusingly", "who": {"notTrait": "thief"}, "when": [{"memory": "theft", "withinDays": 1}], "priority": 40,
+       "target": {"kind": "villager", "pick": "memoryActor", "event": "theft"}, "duration": 4, "cooldownDays": 1,
+       "do": [{"feeling": -8, "towards": "both"}]},
+      {"id": "brawl", "label": "Brawling", "when": [{"memory": "theft", "withinDays": 2}], "priority": 45,
+       "target": {"kind": "villager", "pick": "memoryActor", "event": "theft", "filter": [{"feeling": true, "op": "<=", "value": -40}]}, "duration": 5, "cooldownDays": 5,
+       "do": [{"health": -6, "on": "target"}, {"health": -2}, {"event": "brawl", "radius": 5}, {"log": "{actor} punched {target} about the berries."}]}
+    ],
+    "drawback": {"label": "Grudges and brawls", "text": "Thieves get fed, everyone else starts punching, and nobody shares with anyone they hate.", "rules": ["steal", "brawl"]}
+  },
+  "make a government": {
+    "id": "government", "title": "Government", "narration": "You invent government. The most popular villager is immediately given a pile of other people's berries.",
+    "roles": [{"id": "chief", "label": "Chief", "count": 1, "pick": "popular", "reelectBelow": -5}],
+    "objects": [
+      {"id": "granary", "label": "Granary", "place": {"count": 1, "near": "center"}, "stock": {"item": "food", "amount": 10, "max": 200, "regrowPerDay": 0},
+       "sprite": {"palette": ["#7a4b24", "#c79a5b", "#3a2412"], "rows": ["...00...", "..0000..", ".000000.", "01111110", "01122110", "01122110", "01122110", "00000000"]}}
+    ],
+    "behaviors": [
+      {"id": "pay_tax", "label": "Paying taxes", "who": {"notRole": "chief"}, "when": [{"item": "food", "op": ">=", "value": 3}], "priority": 28,
+       "target": {"kind": "object", "object": "granary", "pick": "nearest"}, "duration": 3, "cooldownDays": 4,
+       "do": [{"toStock": "food", "amount": 1}, {"feeling": -3, "towards": {"role": "chief"}}]},
+      {"id": "ration", "label": "Queueing for rations", "when": [{"need": "hunger", "op": ">", "value": 70}, {"item": "food", "op": "<", "value": 1}], "priority": 70,
+       "target": {"kind": "object", "object": "granary", "filter": [{"stock": true, "op": ">=", "value": 1}], "pick": "nearest"}, "duration": 5, "cooldownDays": 1,
+       "do": [{"fromStock": "food", "amount": 1}, {"feeling": 2, "towards": {"role": "chief"}}]},
+      {"id": "skim", "label": "Quietly helping themselves", "who": {"role": "chief"}, "when": [{"item": "food", "op": "<", "value": 6}], "priority": 34,
+       "target": {"kind": "object", "object": "granary", "filter": [{"stock": true, "op": ">=", "value": 3}], "pick": "nearest"}, "duration": 5, "cooldownDays": 1,
+       "do": [{"fromStock": "food", "amount": 2}, {"event": "corruption", "radius": 8}, {"log": "{actor} took a little extra for official reasons."}]},
+      {"id": "complain", "label": "Complaining about the chief", "who": {"notRole": "chief"}, "when": [{"memory": "corruption", "withinDays": 1}], "priority": 12,
+       "target": {"kind": "self"}, "duration": 5, "cooldownDays": 2,
+       "do": [{"feeling": -6, "towards": {"role": "chief"}}]},
+      {"id": "punish", "label": "Administering justice", "who": {"role": "chief"}, "when": [{"memory": "theft", "withinDays": 3}], "priority": 42,
+       "target": {"kind": "villager", "pick": "memoryActor", "event": "theft"}, "duration": 5, "cooldownDays": 1,
+       "do": [{"item": "food", "by": -2, "on": "target"}, {"health": -5, "on": "target"}, {"feeling": -10, "towards": "self"}, {"event": "justice", "radius": 8}, {"log": "{actor} fined {target} two berries and some dignity."}]}
+    ],
+    "drawback": {"label": "Taxes and corruption", "text": "Everyone pays in, the chief skims, and an unpopular chief gets overthrown.", "rules": ["pay_tax", "skim"]}
+  }
+}
+</script>
+<script type="text/plain" id="ai-instructions">
+# AI instructions
+
+You are the world engine of a funny, chaotic god game. A god types a command and you change a small island of villagers by replying with one JSON object called a pack. Reply with only that JSON.
+
+Take the command literally. A clear command gets what the god meant. A vague one gets a funny, literal reading. Every pack must include a real drawback connected to the gift and proportionate to it. Keep narration to one or two funny sentences.
+
+## Time
+120 ticks make a day and 12 days make a year. The last third of each day is night. Villagers pick a new behaviour about every 10 ticks.
+
+## Pack fields
+All are optional except `id`, `title`, `narration` and `drawback`.
+
+- `id`, `title`, `narration`: strings. Ids use lowercase letters, digits and underscores, and must not clash with anything in the world.
+- `needs`: `{id, label, start, perDay, damageAt, damagePerDay}`. Values run 0 to 100 and rise by `perDay`. At or above `damageAt`, health falls by `damagePerDay`.
+- `items`: `{id, label}`.
+- `traits`: `{id, label, share}`. `share` is the fraction of villagers who get it now.
+- `roles`: `{id, label, count, pick, reelectBelow}`. `pick` is `popular` or `random`. If average feeling towards a holder falls below `reelectBelow` (-100 to 100), or the holder dies, the role passes on and a `revolt` event fires.
+- `objects`: `{id, label, sprite, color, place, stock, aura, hurts, spread, lifetimeDays, respawn}`.
+  - `place`: `{count, near}`. `near` is `villagers`, `center`, `coast` or `anywhere`.
+  - `stock`: `{item, amount, max, regrowPerDay}`.
+  - `aura`: `{radius, need, perDay}` changes that need for villagers nearby.
+  - `hurts`: `{radius, perDay}` takes health from villagers nearby.
+  - `spread`: `{onto: [objectIds], becomes, chancePerDay, radius}` turns nearby objects into another object.
+  - `lifetimeDays`: the object vanishes after this long.
+  - `respawn`: `{perDay, max}` makes new copies appear on empty land up to `max`.
+  - `sprite`: `{palette: ["#rrggbb", ...], rows: ["01.", ...]}`. Square, 8 to 16 rows. Each character is a palette index, and `.` is transparent.
+- `behaviors`: see below.
+- `drawback`: `{label, text, rules}`. `rules` lists at least one id of a behaviour or object in this pack that causes the drawback.
+
+## Behaviours
+`{id, label, who, when, priority, urgency, target, duration, cooldownDays, do}`
+
+- `who`: optional `{trait, notTrait, role, notRole}`.
+- `when`: a list of conditions that must all be true.
+- `priority`: 0 to 100. The highest allowed behaviour wins. `urgency`: `{need, scale}` adds that need's value times `scale`.
+- `target`: where to go first.
+  - `{kind: "self"}` acts on the spot.
+  - `{kind: "wander"}` walks somewhere nearby.
+  - `{kind: "object", object, filter, pick, maxRange}`.
+  - `{kind: "villager", filter, pick, maxRange, role}`. `role` limits it to holders of that role.
+  - `{kind: "away", object}` runs from the nearest of that object.
+  - `pick` is `nearest` or `random`, or for villagers `lowestFeeling`, or `memoryActor` with `event` naming the event to look up.
+- `duration`: ticks spent at the target before `do` runs.
+- `cooldownDays`: how long before this villager can use it again.
+- `do`: a list of effects.
+
+## Conditions
+Each may also be used in `filter`, where it is checked on the target.
+- `{"need": "hunger", "op": ">", "value": 60}`, and the same with `item`. `op` is `<`, `<=`, `>`, `>=` or `==`.
+- `{"health": true, "op": "<", "value": 50}`
+- `{night: true}` or `{night: false}`
+- `{chance: 0.1}` is checked each time the villager decides.
+- `{memory: eventType, withinDays}` is true if the villager saw that event recently.
+- `{nearObject: objectId, radius}`
+- `{world: variable, op, value}`
+- `{any: [conditions]}` is true if any one is true.
+- In `filter` only: `{"stock": true, "op": ">=", "value": 1}` for an object, and `{"feeling": true, "op": "<=", "value": -20}` for how the actor feels about the target villager.
+
+## Effects
+`on` is `self` (the default) or `target`.
+- `{need, by, on}`, `{health, by, on}`, `{item, by, on}`
+- `{transfer: item, amount}` moves items from the target villager to the actor. A negative amount moves them from the actor to the target.
+- `{fromStock: item, amount}` moves items from the target object to the actor. `{toStock: item, amount}` moves them from the actor to the target object.
+- `{feeling, towards}` changes feelings by the `feeling` amount. `towards` is `target` (actor's feeling about the target), `self` (target's feeling about the actor), `both`, `nearby` (actor and villagers within `radius`, both ways) or `{role}` (actor's feeling about holders of that role).
+- `{event: eventType, radius}` records the event. The target and everyone within `radius` remember it, with the actor as the one who did it.
+- `{spawn: objectId}` places an object here. `{remove: "target"}` removes the target object.
+- `{world: variable, by}` changes a number stored on the world.
+- `{addTrait: id, on}`, `{removeTrait: id, on}`
+- `{log: "text"}` adds a line to the world log. `{actor}` and `{target}` become names.
+
+## What already exists
+The current world summary follows these instructions. Refer to anything it lists by id. Event ids can be new, and may name events that no pack creates yet.
+</script>
+
+<script>
+'use strict';
+(function () {
+// ===================================================================
+// SIMULATION (pure: no DOM access, no Math.random)
+// ===================================================================
+var W = 64, H = 44, TPD = 120, DPY = 12, NIGHT_START = 80, SPEED = 0.12;
+var PACKS = {};
+var AI_INSTRUCTIONS = '';
+
+var dict = function () { return Object.create(null); };
+var hasOwn = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
+var isObj = function (x) { return x !== null && typeof x === 'object' && !Array.isArray(x); };
+var clamp = function (v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; };
+
+var ID_RE = /^[a-z0-9][a-z0-9_]*$/;
+var HEX_RE = /^#[0-9a-fA-F]{6}$/;
+var OPS = ['<', '<=', '>', '>=', '=='];
+var NEARS = ['villagers', 'center', 'coast', 'anywhere'];
+
+function cmp(a, op, b) {
+  switch (op) {
+    case '<': return a < b;
+    case '<=': return a <= b;
+    case '>': return a > b;
+    case '>=': return a >= b;
+    case '==': return a === b;
+  }
+  return false;
+}
+
+function newWorld() {
+  return {
+    needs: dict(), items: dict(), traits: dict(), roles: dict(), objects: dict(), behaviors: dict(),
+    needList: [], objList: [], roleList: [], behList: [], packs: []
+  };
+}
+
+// ---------- validation ----------
+function validatePack(pack, ws) {
+  var world = (ws && ws.world) ? ws.world : (ws || newWorld());
+  if (!world.packs) world.packs = [];
+  var errs = [];
+  var err = function (m) { errs.push(m); };
+  var done = function () { return { ok: errs.length === 0, errors: errs.slice(0, 40) }; };
+
+  if (!isObj(pack)) { err('A pack must be a JSON object.'); return done(); }
+  var json;
+  try { json = JSON.stringify(pack); } catch (e) { err('The pack cannot be turned into JSON.'); return done(); }
+  var size = typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(json).length : json.length;
+  if (size > 30000) err('The pack is too big (' + size + ' bytes, the limit is 30000).');
+
+  var isBase = pack.id === 'base' && world.packs.length === 0;
+
+  var keysOk = function (o, allowed, path) {
+    Object.keys(o).forEach(function (k) {
+      if (allowed.indexOf(k) < 0) err(path + ': unknown field "' + k + '".');
+    });
+  };
+  var req = function (o, ks, path) {
+    ks.forEach(function (k) { if (!hasOwn(o, k)) err(path + ': missing required field "' + k + '".'); });
+  };
+  var num = function (v, lo, hi, path, int) {
+    if (typeof v !== 'number' || !isFinite(v)) { err(path + ' must be a finite number.'); return false; }
+    if (v < lo || v > hi) { err(path + ' must be between ' + lo + ' and ' + hi + '.'); return false; }
+    if (int && !Number.isInteger(v)) { err(path + ' must be a whole number.'); return false; }
+    return true;
+  };
+  var str = function (v, max, path) {
+    if (typeof v !== 'string' || !v.trim()) { err(path + ' must be a non-empty piece of text.'); return false; }
+    if (v.length > max) { err(path + ' is too long (the limit is ' + max + ' characters).'); return false; }
+    return true;
+  };
+  var idFmt = function (v, path) {
+    if (typeof v !== 'string' || !ID_RE.test(v) || v.length > 40) {
+      err(path + ' must be an id made of lowercase letters, digits and underscores (up to 40 characters, not starting with an underscore).');
+      return false;
+    }
+    return true;
+  };
+  var list = function (v, max, path, name) {
+    if (v === undefined) return [];
+    if (!Array.isArray(v)) { err(path + ' must be a list.'); return []; }
+    if (v.length > max) { err(path + ' has too many entries (at most ' + max + ' ' + name + ' per pack).'); return v.slice(0, max); }
+    return v;
+  };
+
+  keysOk(pack, ['id', 'title', 'narration', 'needs', 'items', 'traits', 'roles', 'objects', 'behaviors', 'drawback'], 'Pack');
+  req(pack, ['id', 'title', 'narration'], 'Pack');
+
+  var needsL = list(pack.needs, 6, 'needs', 'needs');
+  var itemsL = list(pack.items, 12, 'items', 'items');
+  var traitsL = list(pack.traits, 8, 'traits', 'traits');
+  var rolesL = list(pack.roles, 6, 'roles', 'roles');
+  var objsL = list(pack.objects, 10, 'objects', 'objects');
+  var behsL = list(pack.behaviors, 12, 'behaviors', 'behaviours');
+
+  // ids
+  var seen = new Set();
+  var pNeeds = new Set(), pItems = new Set(), pTraits = new Set(), pRoles = new Set(), pObjs = new Set(), pBehs = new Set();
+  var worldHas = function (id) {
+    return !!(world.needs[id] || world.items[id] || world.traits[id] || world.roles[id] || world.objects[id] || world.behaviors[id]);
+  };
+  var collect = function (arr, set, label, kind) {
+    arr.forEach(function (e, i) {
+      var path = label + '[' + i + ']';
+      if (!isObj(e)) { err(path + ' must be an object.'); return; }
+      if (!hasOwn(e, 'id')) { err(path + ': missing required field "id".'); return; }
+      if (!idFmt(e.id, path + '.id')) return;
+      if (worldHas(e.id)) { err(path + ': the id "' + e.id + '" already exists in the world.'); return; }
+      if (seen.has(e.id)) { err(path + ': the id "' + e.id + '" is used twice in this pack.'); return; }
+      seen.add(e.id); set.add(e.id);
+    });
+  };
+  if (hasOwn(pack, 'id')) {
+    if (idFmt(pack.id, 'Pack id')) {
+      if (world.packs.some(function (p) { return p.id === pack.id; })) err('The pack id "' + pack.id + '" is already in use, so this has already happened.');
+    }
+  }
+  if (hasOwn(pack, 'title')) str(pack.title, 80, 'Pack title');
+  if (hasOwn(pack, 'narration')) str(pack.narration, 500, 'Pack narration');
+  collect(needsL, pNeeds, 'needs'); collect(itemsL, pItems, 'items'); collect(traitsL, pTraits, 'traits');
+  collect(rolesL, pRoles, 'roles'); collect(objsL, pObjs, 'objects'); collect(behsL, pBehs, 'behaviors');
+
+  var hasNeed = function (id) { return !!world.needs[id] || pNeeds.has(id); };
+  var hasItem = function (id) { return !!world.items[id] || pItems.has(id); };
+  var hasTrait = function (id) { return !!world.traits[id] || pTraits.has(id); };
+  var hasRole = function (id) { return !!world.roles[id] || pRoles.has(id); };
+  var hasObj = function (id) { return !!world.objects[id] || pObjs.has(id); };
+  var ref = function (id, has, kind, path) {
+    if (typeof id !== 'string' || !has(id)) { err(path + ': there is no ' + kind + ' called "' + String(id) + '" in the world or in this pack.'); return false; }
+    return true;
+  };
+  var evId = function (v, path) { return idFmt(v, path); };
+
+  // needs
+  needsL.forEach(function (n, i) {
+    var p = 'needs[' + i + ']';
+    if (!isObj(n)) return;
+    keysOk(n, ['id', 'label', 'start', 'perDay', 'damageAt', 'damagePerDay'], p);
+    req(n, ['id', 'label', 'start', 'perDay', 'damageAt', 'damagePerDay'], p);
+    if (hasOwn(n, 'label')) str(n.label, 60, p + '.label');
+    if (hasOwn(n, 'start')) num(n.start, 0, 100, p + '.start');
+    if (hasOwn(n, 'perDay')) num(n.perDay, -200, 200, p + '.perDay');
+    if (hasOwn(n, 'damageAt')) num(n.damageAt, 0, 100, p + '.damageAt');
+    if (hasOwn(n, 'damagePerDay')) num(n.damagePerDay, 0, 200, p + '.damagePerDay');
+  });
+  itemsL.forEach(function (n, i) {
+    var p = 'items[' + i + ']';
+    if (!isObj(n)) return;
+    keysOk(n, ['id', 'label'], p); req(n, ['id', 'label'], p);
+    if (hasOwn(n, 'label')) str(n.label, 60, p + '.label');
+  });
+  traitsL.forEach(function (n, i) {
+    var p = 'traits[' + i + ']';
+    if (!isObj(n)) return;
+    keysOk(n, ['id', 'label', 'share'], p); req(n, ['id', 'label', 'share'], p);
+    if (hasOwn(n, 'label')) str(n.label, 60, p + '.label');
+    if (hasOwn(n, 'share')) num(n.share, 0, 1, p + '.share');
+  });
+  rolesL.forEach(function (n, i) {
+    var p = 'roles[' + i + ']';
+    if (!isObj(n)) return;
+    keysOk(n, ['id', 'label', 'count', 'pick', 'reelectBelow'], p); req(n, ['id', 'label', 'count', 'pick', 'reelectBelow'], p);
+    if (hasOwn(n, 'label')) str(n.label, 60, p + '.label');
+    if (hasOwn(n, 'count')) num(n.count, 0, 20, p + '.count', true);
+    if (hasOwn(n, 'pick') && n.pick !== 'popular' && n.pick !== 'random') err(p + '.pick must be "popular" or "random".');
+    if (hasOwn(n, 'reelectBelow')) num(n.reelectBelow, -100, 100, p + '.reelectBelow');
+  });
+
+  // conditions
+  // kind: 'when' | 'obj' (filter on object) | 'vil' (filter on villager)
+  var checkCond = function (c, path, kind, depth) {
+    if (!isObj(c)) { err(path + ': a condition must be an object.'); return; }
+    var has = function (k) { return hasOwn(c, k); };
+    var cmpCheck = function (lo, hi) {
+      if (OPS.indexOf(c.op) < 0) err(path + '.op must be one of < <= > >= ==.');
+      num(c.value, lo, hi, path + '.value');
+    };
+    if (has('any')) {
+      keysOk(c, ['any'], path);
+      if (!Array.isArray(c.any) || !c.any.length || c.any.length > 10) { err(path + '.any must be a list of 1 to 10 conditions.'); return; }
+      if (depth >= 3) { err(path + ': conditions are nested too deeply.'); return; }
+      c.any.forEach(function (x, i) { checkCond(x, path + '.any[' + i + ']', kind, depth + 1); });
+    } else if (has('need')) {
+      keysOk(c, ['need', 'op', 'value'], path); req(c, ['op', 'value'], path);
+      ref(c.need, hasNeed, 'need', path + '.need'); cmpCheck(-1000, 1000);
+    } else if (has('item')) {
+      keysOk(c, ['item', 'op', 'value'], path); req(c, ['op', 'value'], path);
+      ref(c.item, hasItem, 'item', path + '.item'); cmpCheck(-1000, 100000);
+    } else if (has('health')) {
+      keysOk(c, ['health', 'op', 'value'], path); req(c, ['op', 'value'], path);
+      if (c.health !== true) err(path + '.health must be true.');
+      cmpCheck(0, 100);
+    } else if (has('night')) {
+      keysOk(c, ['night'], path);
+      if (typeof c.night !== 'boolean') err(path + '.night must be true or false.');
+    } else if (has('chance')) {
+      keysOk(c, ['chance'], path); num(c.chance, 0, 1, path + '.chance');
+    } else if (has('memory')) {
+      keysOk(c, ['memory', 'withinDays'], path); req(c, ['withinDays'], path);
+      evId(c.memory, path + '.memory'); num(c.withinDays, 0, 365, path + '.withinDays');
+    } else if (has('nearObject')) {
+      keysOk(c, ['nearObject', 'radius'], path); req(c, ['radius'], path);
+      ref(c.nearObject, hasObj, 'object', path + '.nearObject'); num(c.radius, 0, 100, path + '.radius');
+    } else if (has('world')) {
+      keysOk(c, ['world', 'op', 'value'], path); req(c, ['op', 'value'], path);
+      evId(c.world, path + '.world'); cmpCheck(-1000000, 1000000);
+    } else if (has('stock')) {
+      keysOk(c, ['stock', 'op', 'value'], path); req(c, ['op', 'value'], path);
+      if (c.stock !== true) err(path + '.stock must be true.');
+      if (kind !== 'obj') err(path + ': a stock condition only works in the filter of an object target.');
+      cmpCheck(0, 100000);
+    } else if (has('feeling')) {
+      keysOk(c, ['feeling', 'op', 'value'], path); req(c, ['op', 'value'], path);
+      if (c.feeling !== true) err(path + '.feeling must be true.');
+      if (kind !== 'vil') err(path + ': a feeling condition only works in the filter of a villager target.');
+      cmpCheck(-100, 100);
+    } else {
+      err(path + ': this is not a condition the world understands.');
+    }
+  };
+  var condList = function (v, path, kind, max) {
+    if (v === undefined) return;
+    if (!Array.isArray(v)) { err(path + ' must be a list.'); return; }
+    if (v.length > max) { err(path + ' has too many conditions.'); return; }
+    v.forEach(function (c, i) { checkCond(c, path + '[' + i + ']', kind, 0); });
+  };
+
+  // sprites
+  var checkSprite = function (s, path) {
+    if (!isObj(s)) { err(path + ' must be an object.'); return; }
+    keysOk(s, ['palette', 'rows'], path); req(s, ['palette', 'rows'], path);
+    var pal = s.palette, rows = s.rows, okPal = false;
+    if (!Array.isArray(pal) || pal.length < 1 || pal.length > 10) err(path + '.palette must be a list of 1 to 10 colours.');
+    else if (!pal.every(function (c) { return typeof c === 'string' && HEX_RE.test(c); })) err(path + '.palette colours must look like #a1b2c3.');
+    else okPal = true;
+    if (!Array.isArray(rows) || rows.length < 8 || rows.length > 16) { err(path + '.rows must be a list of 8 to 16 rows.'); return; }
+    rows.forEach(function (r, i) {
+      if (typeof r !== 'string' || r.length !== rows.length) { err(path + '.rows[' + i + '] must be text exactly ' + rows.length + ' characters long (sprites are square).'); return; }
+      for (var k = 0; k < r.length; k++) {
+        var ch = r[k];
+        if (ch === '.') continue;
+        if (ch < '0' || ch > '9' || (okPal && +ch >= pal.length)) { err(path + '.rows[' + i + '] has the character "' + ch + '" which is not a valid palette index.'); return; }
+      }
+    });
+  };
+
+  // objects
+  objsL.forEach(function (o, i) {
+    var p = 'objects[' + i + ']';
+    if (!isObj(o)) return;
+    keysOk(o, ['id', 'label', 'sprite', 'color', 'place', 'stock', 'aura', 'hurts', 'spread', 'lifetimeDays', 'respawn'], p);
+    req(o, ['id', 'label'], p);
+    if (hasOwn(o, 'label')) str(o.label, 60, p + '.label');
+    if (hasOwn(o, 'color') && !(typeof o.color === 'string' && HEX_RE.test(o.color))) err(p + '.color must look like #a1b2c3.');
+    if (hasOwn(o, 'sprite')) checkSprite(o.sprite, p + '.sprite');
+    if (hasOwn(o, 'place')) {
+      var pl = o.place, pp = p + '.place';
+      if (!isObj(pl)) err(pp + ' must be an object.');
+      else {
+        keysOk(pl, ['count', 'near'], pp); req(pl, ['count', 'near'], pp);
+        if (hasOwn(pl, 'count')) num(pl.count, 0, 200, pp + '.count', true);
+        if (hasOwn(pl, 'near') && NEARS.indexOf(pl.near) < 0) err(pp + '.near must be villagers, center, coast or anywhere.');
+      }
+    }
+    if (hasOwn(o, 'stock')) {
+      var s = o.stock, sp = p + '.stock';
+      if (!isObj(s)) err(sp + ' must be an object.');
+      else {
+        keysOk(s, ['item', 'amount', 'max', 'regrowPerDay'], sp); req(s, ['item', 'amount', 'max'], sp);
+        if (hasOwn(s, 'item')) ref(s.item, hasItem, 'item', sp + '.item');
+        if (hasOwn(s, 'amount')) num(s.amount, 0, 1000, sp + '.amount');
+        if (hasOwn(s, 'max')) num(s.max, 0, 1000, sp + '.max');
+        if (hasOwn(s, 'regrowPerDay')) num(s.regrowPerDay, 0, 1000, sp + '.regrowPerDay');
+      }
+    }
+    if (hasOwn(o, 'aura')) {
+      var a = o.aura, ap = p + '.aura';
+      if (!isObj(a)) err(ap + ' must be an object.');
+      else {
+        keysOk(a, ['radius', 'need', 'perDay'], ap); req(a, ['radius', 'need', 'perDay'], ap);
+        if (hasOwn(a, 'radius')) num(a.radius, 0, 30, ap + '.radius');
+        if (hasOwn(a, 'need')) ref(a.need, hasNeed, 'need', ap + '.need');
+        if (hasOwn(a, 'perDay')) num(a.perDay, -200, 200, ap + '.perDay');
+      }
+    }
+    if (hasOwn(o, 'hurts')) {
+      var h = o.hurts, hp = p + '.hurts';
+      if (!isObj(h)) err(hp + ' must be an object.');
+      else {
+        keysOk(h, ['radius', 'perDay'], hp); req(h, ['radius', 'perDay'], hp);
+        if (hasOwn(h, 'radius')) num(h.radius, 0, 30, hp + '.radius');
+        if (hasOwn(h, 'perDay')) num(h.perDay, 0, 500, hp + '.perDay');
+      }
+    }
+    if (hasOwn(o, 'spread')) {
+      var sd = o.spread, sdp = p + '.spread';
+      if (!isObj(sd)) err(sdp + ' must be an object.');
+      else {
+        keysOk(sd, ['onto', 'becomes', 'chancePerDay', 'radius'], sdp); req(sd, ['onto', 'becomes', 'chancePerDay', 'radius'], sdp);
+        if (hasOwn(sd, 'onto')) {
+          if (!Array.isArray(sd.onto) || !sd.onto.length || sd.onto.length > 10) err(sdp + '.onto must be a list of 1 to 10 object ids.');
+          else sd.onto.forEach(function (x, k) { ref(x, hasObj, 'object', sdp + '.onto[' + k + ']'); });
+        }
+        if (hasOwn(sd, 'becomes')) ref(sd.becomes, hasObj, 'object', sdp + '.becomes');
+        if (hasOwn(sd, 'chancePerDay')) num(sd.chancePerDay, 0, 10, sdp + '.chancePerDay');
+        if (hasOwn(sd, 'radius')) num(sd.radius, 0, 30, sdp + '.radius');
+      }
+    }
+    if (hasOwn(o, 'lifetimeDays')) num(o.lifetimeDays, 0.05, 1000, p + '.lifetimeDays');
+    if (hasOwn(o, 'respawn')) {
+      var r = o.respawn, rp = p + '.respawn';
+      if (!isObj(r)) err(rp + ' must be an object.');
+      else {
+        keysOk(r, ['perDay', 'max'], rp); req(r, ['perDay', 'max'], rp);
+        if (hasOwn(r, 'perDay')) num(r.perDay, 0, 200, rp + '.perDay');
+        if (hasOwn(r, 'max')) num(r.max, 0, 300, rp + '.max', true);
+      }
+    }
+  });
+
+  // effects
+  var checkEffects = function (effs, path, tk) {
+    if (!Array.isArray(effs)) { err(path + ' must be a list of effects.'); return; }
+    if (effs.length > 12) { err(path + ' has too many effects (at most 12).'); return; }
+    effs.forEach(function (e, i) {
+      var p = path + '[' + i + ']';
+      if (!isObj(e)) { err(p + ': an effect must be an object.'); return; }
+      var has = function (k) { return hasOwn(e, k); };
+      var onCheck = function () {
+        if (has('on')) {
+          if (e.on !== 'self' && e.on !== 'target') err(p + '.on must be "self" or "target".');
+          else if (e.on === 'target' && tk !== 'villager') err(p + ': "on": "target" needs a villager target.');
+        }
+      };
+      var needVil = function () { if (tk !== 'villager') err(p + ': this effect needs a villager target.'); };
+      var needObj = function () { if (tk !== 'object') err(p + ': this effect needs an object target.'); };
+      if (has('need')) {
+        keysOk(e, ['need', 'by', 'on'], p); req(e, ['by'], p);
+        ref(e.need, hasNeed, 'need', p + '.need'); num(e.by, -200, 200, p + '.by'); onCheck();
+      } else if (has('health')) {
+        keysOk(e, ['health', 'by', 'on'], p);
+        if (typeof e.health === 'number') {
+          num(e.health, -200, 200, p + '.health');
+          if (has('by')) err(p + ': give the amount in "health", or use "health": true with "by", not both.');
+        } else if (e.health === true) { req(e, ['by'], p); if (has('by')) num(e.by, -200, 200, p + '.by'); }
+        else err(p + '.health must be an amount (or true with "by").');
+        onCheck();
+      } else if (has('item')) {
+        keysOk(e, ['item', 'by', 'on'], p); req(e, ['by'], p);
+        ref(e.item, hasItem, 'item', p + '.item'); num(e.by, -1000, 1000, p + '.by'); onCheck();
+      } else if (has('transfer')) {
+        keysOk(e, ['transfer', 'amount'], p); req(e, ['amount'], p);
+        ref(e.transfer, hasItem, 'item', p + '.transfer'); num(e.amount, -1000, 1000, p + '.amount'); needVil();
+      } else if (has('fromStock')) {
+        keysOk(e, ['fromStock', 'amount'], p); req(e, ['amount'], p);
+        ref(e.fromStock, hasItem, 'item', p + '.fromStock'); num(e.amount, 0, 1000, p + '.amount'); needObj();
+      } else if (has('toStock')) {
+        keysOk(e, ['toStock', 'amount'], p); req(e, ['amount'], p);
+        ref(e.toStock, hasItem, 'item', p + '.toStock'); num(e.amount, 0, 1000, p + '.amount'); needObj();
+      } else if (has('feeling')) {
+        keysOk(e, ['feeling', 'towards', 'radius'], p); req(e, ['towards'], p);
+        num(e.feeling, -200, 200, p + '.feeling');
+        var tw = e.towards;
+        if (tw === 'target' || tw === 'both') needVil();
+        else if (tw === 'self') needVil();
+        else if (tw === 'nearby') { if (!has('radius')) err(p + ': "nearby" needs a radius.'); }
+        else if (isObj(tw)) {
+          keysOk(tw, ['role'], p + '.towards'); req(tw, ['role'], p + '.towards');
+          if (hasOwn(tw, 'role')) ref(tw.role, hasRole, 'role', p + '.towards.role');
+        } else err(p + '.towards must be target, self, both, nearby or {"role": id}.');
+        if (has('radius')) num(e.radius, 0, 30, p + '.radius');
+      } else if (has('event')) {
+        keysOk(e, ['event', 'radius'], p);
+        evId(e.event, p + '.event'); if (has('radius')) num(e.radius, 0, 30, p + '.radius');
+      } else if (has('spawn')) {
+        keysOk(e, ['spawn'], p); ref(e.spawn, hasObj, 'object', p + '.spawn');
+      } else if (has('remove')) {
+        keysOk(e, ['remove'], p);
+        if (e.remove !== 'target') err(p + '.remove must be "target".');
+        needObj();
+      } else if (has('world')) {
+        keysOk(e, ['world', 'by'], p); req(e, ['by'], p);
+        evId(e.world, p + '.world'); num(e.by, -1000000, 1000000, p + '.by');
+      } else if (has('addTrait')) {
+        keysOk(e, ['addTrait', 'on'], p); ref(e.addTrait, hasTrait, 'trait', p + '.addTrait'); onCheck();
+      } else if (has('removeTrait')) {
+        keysOk(e, ['removeTrait', 'on'], p); ref(e.removeTrait, hasTrait, 'trait', p + '.removeTrait'); onCheck();
+      } else if (has('log')) {
+        keysOk(e, ['log'], p); str(e.log, 200, p + '.log');
+      } else {
+        err(p + ': this is not an effect the world understands.');
+      }
+    });
+  };
+
+  // behaviours
+  behsL.forEach(function (b, i) {
+    var p = 'behaviors[' + i + ']';
+    if (!isObj(b)) { err(p + ' must be an object.'); return; }
+    keysOk(b, ['id', 'label', 'who', 'when', 'priority', 'urgency', 'target', 'duration', 'cooldownDays', 'do'], p);
+    req(b, ['id', 'label', 'priority', 'target', 'duration', 'do'], p);
+    if (hasOwn(b, 'label')) str(b.label, 60, p + '.label');
+    if (hasOwn(b, 'priority')) num(b.priority, 0, 100, p + '.priority');
+    if (hasOwn(b, 'duration')) num(b.duration, 0, 500, p + '.duration');
+    if (hasOwn(b, 'cooldownDays')) num(b.cooldownDays, 0, 1000, p + '.cooldownDays');
+    if (hasOwn(b, 'who')) {
+      var w = b.who, wp = p + '.who';
+      if (!isObj(w)) err(wp + ' must be an object.');
+      else {
+        keysOk(w, ['trait', 'notTrait', 'role', 'notRole'], wp);
+        if (hasOwn(w, 'trait')) ref(w.trait, hasTrait, 'trait', wp + '.trait');
+        if (hasOwn(w, 'notTrait')) ref(w.notTrait, hasTrait, 'trait', wp + '.notTrait');
+        if (hasOwn(w, 'role')) ref(w.role, hasRole, 'role', wp + '.role');
+        if (hasOwn(w, 'notRole')) ref(w.notRole, hasRole, 'role', wp + '.notRole');
+      }
+    }
+    condList(b.when, p + '.when', 'when', 10);
+    if (hasOwn(b, 'urgency')) {
+      var u = b.urgency, up = p + '.urgency';
+      if (!isObj(u)) err(up + ' must be an object.');
+      else {
+        keysOk(u, ['need', 'scale'], up); req(u, ['need', 'scale'], up);
+        if (hasOwn(u, 'need')) ref(u.need, hasNeed, 'need', up + '.need');
+        if (hasOwn(u, 'scale')) num(u.scale, -10, 10, up + '.scale');
+      }
+    }
+    var tk = null;
+    var t = b.target, tp = p + '.target';
+    if (hasOwn(b, 'target')) {
+      if (!isObj(t)) err(tp + ' must be an object.');
+      else if (t.kind === 'self' || t.kind === 'wander') { keysOk(t, ['kind'], tp); tk = t.kind; }
+      else if (t.kind === 'object') {
+        tk = 'object';
+        keysOk(t, ['kind', 'object', 'filter', 'pick', 'maxRange'], tp); req(t, ['object'], tp);
+        if (hasOwn(t, 'object')) ref(t.object, hasObj, 'object', tp + '.object');
+        condList(t.filter, tp + '.filter', 'obj', 10);
+        if (hasOwn(t, 'pick') && t.pick !== 'nearest' && t.pick !== 'random') err(tp + '.pick must be "nearest" or "random" for an object target.');
+        if (hasOwn(t, 'maxRange')) num(t.maxRange, 0, 500, tp + '.maxRange');
+      } else if (t.kind === 'villager') {
+        tk = 'villager';
+        keysOk(t, ['kind', 'filter', 'pick', 'maxRange', 'role', 'event'], tp);
+        condList(t.filter, tp + '.filter', 'vil', 10);
+        if (hasOwn(t, 'pick') && ['nearest', 'random', 'lowestFeeling', 'memoryActor'].indexOf(t.pick) < 0) err(tp + '.pick must be nearest, random, lowestFeeling or memoryActor.');
+        if (t.pick === 'memoryActor') { if (!hasOwn(t, 'event')) err(tp + ': "memoryActor" needs an "event".'); else evId(t.event, tp + '.event'); }
+        else if (hasOwn(t, 'event')) err(tp + ': "event" is only used with "memoryActor".');
+        if (hasOwn(t, 'maxRange')) num(t.maxRange, 0, 500, tp + '.maxRange');
+        if (hasOwn(t, 'role')) ref(t.role, hasRole, 'role', tp + '.role');
+      } else if (t.kind === 'away') {
+        tk = 'away';
+        keysOk(t, ['kind', 'object'], tp); req(t, ['object'], tp);
+        if (hasOwn(t, 'object')) ref(t.object, hasObj, 'object', tp + '.object');
+      } else err(tp + '.kind must be self, wander, object, villager or away.');
+    }
+    if (hasOwn(b, 'do')) checkEffects(b.do, p + '.do', tk);
+  });
+
+  // drawback
+  var dbp = 'drawback';
+  if (!hasOwn(pack, 'drawback')) {
+    if (!isBase) err('Every pack needs a drawback that is connected to the gift.');
+  } else {
+    var d = pack.drawback;
+    if (!isObj(d)) err('The drawback must be an object with a label, text and rules.');
+    else {
+      keysOk(d, ['label', 'text', 'rules'], dbp); req(d, ['label', 'text', 'rules'], dbp);
+      if (hasOwn(d, 'label')) str(d.label, 80, dbp + '.label');
+      if (hasOwn(d, 'text')) str(d.text, 300, dbp + '.text');
+      if (hasOwn(d, 'rules')) {
+        if (!Array.isArray(d.rules) || !d.rules.length || d.rules.length > 22) err('drawback.rules must list at least one behaviour or object id from this pack.');
+        else {
+          var named = d.rules.filter(function (r) { return typeof r === 'string' && (pBehs.has(r) || pObjs.has(r)); });
+          if (!named.length) err('drawback.rules must name at least one behaviour or object that this pack adds.');
+        }
+      }
+    }
+  }
+  return done();
+}
+
+// ---------- names ----------
+var NAME_A = ['Bumble', 'Wobble', 'Pudding', 'Noodle', 'Turnip', 'Crumpet', 'Mumble', 'Fizz', 'Gizzard', 'Pickle', 'Snork', 'Dribble', 'Mugwump', 'Haddock', 'Blort', 'Quibble', 'Dumpling', 'Flap', 'Gubbins', 'Sprout'];
+var NAME_B = ['bottom', 'wick', 'nugget', 'shanks', 'thistle', 'whistle', 'bucket', 'pants', 'toes', 'spoon', 'berry', 'muffin', 'sock', 'crumb', 'bean', 'wump', 'beard', 'kins', 'snout', 'ington'];
+
+function normSeed(s) {
+  if (typeof s === 'number' && isFinite(s)) return (s >>> 0);
+  if (typeof s === 'string') {
+    var h = 2166136261;
+    for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  return 12345;
+}
+
+// ---------- the sim ----------
+function createSim(opts) {
+  opts = opts || {};
+  var seed = normSeed(opts.seed);
+  var rs = seed;
+  function rng() {
+    rs = (rs + 0x6D2B79F5) >>> 0;
+    var t = rs;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  var rint = function (n) { return Math.floor(rng() * n); };
+  var rpick = function (arr) { return arr[rint(arr.length)]; };
+
+  var world = newWorld();
+  var state = {
+    tick: 0, seed: seed, W: W, H: H, tiles: null, villagers: [], objects: [],
+    log: [], logN: 0, vars: dict(), nextObjId: 1,
+    stats: { behaviors: dict(), events: dict(), deaths: 0, burned: 0 }
+  };
+  var objMap = new Map();
+  var occ = new Uint8Array(W * H);
+  var respAcc = dict();
+  var lists = { grass: [], sand: [], coast: [], land: [], center: [] };
+
+  function addLog(text, kind) {
+    state.logN++;
+    state.log.push({ n: state.logN, t: state.tick, text: String(text), kind: kind || 'log' });
+    if (state.log.length > 600) state.log.splice(0, 200);
+  }
+
+  // ----- map -----
+  function genMap() {
+    var tiles = new Uint8Array(W * H);
+    var ph = [rng() * 6.283, rng() * 6.283, rng() * 6.283];
+    var am = [0.08 + rng() * 0.04, 0.05 + rng() * 0.04, 0.02 + rng() * 0.03];
+    var cx = W / 2 - 0.5 + (rng() - 0.5) * 3, cy = H / 2 - 0.5 + (rng() - 0.5) * 2;
+    var rx = 23 + rng() * 1.5, ry = 15 + rng() * 1.2;
+    var x, y, i;
+    for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+      var dx = (x - cx) / rx, dy = (y - cy) / ry;
+      var r = Math.sqrt(dx * dx + dy * dy), th = Math.atan2(dy, dx);
+      var f = 1 + am[0] * Math.sin(2 * th + ph[0]) + am[1] * Math.sin(3 * th + ph[1]) + am[2] * Math.sin(5 * th + ph[2]);
+      var rn = r / f + (rng() - 0.5) * 0.06;
+      tiles[y * W + x] = rn < 0.8 ? 2 : rn < 0.97 ? 1 : 0;
+      if (x === 0 || y === 0 || x === W - 1 || y === H - 1) tiles[y * W + x] = 0;
+    }
+    // keep only land connected to the centre
+    var start = Math.round(cy) * W + Math.round(cx);
+    var keep = new Uint8Array(W * H), stack = [start];
+    if (tiles[start]) keep[start] = 1;
+    while (stack.length) {
+      var c = stack.pop(), cxx = c % W, cyy = (c / W) | 0;
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(function (d) {
+        var nx = cxx + d[0], ny = cyy + d[1];
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) return;
+        var ni = ny * W + nx;
+        if (tiles[ni] && !keep[ni]) { keep[ni] = 1; stack.push(ni); }
+      });
+    }
+    for (i = 0; i < W * H; i++) if (!keep[i]) tiles[i] = 0;
+    // grass touching water becomes sand
+    var out = tiles.slice();
+    for (y = 1; y < H - 1; y++) for (x = 1; x < W - 1; x++) {
+      i = y * W + x;
+      if (tiles[i] === 2 && (!tiles[i - 1] || !tiles[i + 1] || !tiles[i - W] || !tiles[i + W])) out[i] = 1;
+    }
+    state.tiles = out;
+    var sx = 0, sy = 0, n = 0;
+    for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+      i = y * W + x;
+      if (!out[i]) continue;
+      lists.land.push(i); sx += x; sy += y; n++;
+      if (out[i] === 2) lists.grass.push(i);
+      else {
+        lists.sand.push(i);
+        var wet = false;
+        for (var oy = -1; oy <= 1; oy++) for (var ox = -1; ox <= 1; ox++) {
+          var jx = x + ox, jy = y + oy;
+          if (jx >= 0 && jy >= 0 && jx < W && jy < H && !out[jy * W + jx]) wet = true;
+        }
+        if (wet) lists.coast.push(i);
+      }
+    }
+    var mx = sx / n, my = sy / n;
+    state.centroid = { x: mx + 0.5, y: my + 0.5 };
+    lists.grass.forEach(function (i2) {
+      var ddx = (i2 % W) + 0.5 - state.centroid.x, ddy = ((i2 / W) | 0) + 0.5 - state.centroid.y;
+      if (ddx * ddx + ddy * ddy <= 36) lists.center.push(i2);
+    });
+    if (!lists.center.length) lists.center = lists.grass.slice();
+  }
+  function land(x, y) {
+    if (x < 0 || y < 0 || x >= W || y >= H) return false;
+    return state.tiles[Math.floor(y) * W + Math.floor(x)] > 0;
+  }
+
+  // ----- villagers -----
+  function makeVillagers() {
+    var used = new Set();
+    for (var i = 0; i < 50; i++) {
+      var name, tries = 0;
+      do { name = rpick(NAME_A) + rpick(NAME_B); tries++; } while (used.has(name) && tries < 200);
+      if (used.has(name)) name = name + i;
+      used.add(name);
+      var tile = rpick(lists.grass);
+      state.villagers.push({
+        id: i, name: name, x: (tile % W) + 0.2 + rng() * 0.6, y: ((tile / W) | 0) + 0.2 + rng() * 0.6,
+        alive: true, health: 100, needs: dict(), items: dict(), traits: dict(), roles: [], feel: dict(),
+        memories: [], cd: dict(), cur: null
+      });
+    }
+  }
+
+  // ----- objects -----
+  function createObject(defId, x, y) {
+    var d = world.objects[defId];
+    var o = { id: state.nextObjId++, def: defId, x: x, y: y, stock: d.stock ? d.stock.amount : 0, age: 0, dead: false, cv: -1 };
+    state.objects.push(o); objMap.set(o.id, o);
+    occ[Math.floor(y) * W + Math.floor(x)]++;
+    return o;
+  }
+  function removeObject(o) {
+    if (o.dead) return;
+    o.dead = true; objMap.delete(o.id);
+    var k = Math.floor(o.y) * W + Math.floor(o.x);
+    if (occ[k] > 0) occ[k]--;
+  }
+  function randomTile(list, emptyOnly) {
+    var idx = -1;
+    for (var k = 0; k < 12; k++) {
+      idx = rpick(list);
+      if (!emptyOnly || !occ[idx]) return idx;
+    }
+    return emptyOnly ? -1 : idx;
+  }
+  function placeObject(d) {
+    var near = d.place.near, tile = -1, x, y;
+    if (near === 'villagers') {
+      var al = state.villagers.filter(function (v) { return v.alive; });
+      if (!al.length) return;
+      var v = rpick(al);
+      for (var k = 0; k < 15; k++) {
+        var a = rng() * 6.283, r = rng() * 3;
+        x = v.x + Math.cos(a) * r; y = v.y + Math.sin(a) * r;
+        if (land(x, y) && !occ[Math.floor(y) * W + Math.floor(x)]) { createObject(d.id, Math.floor(x) + 0.5, Math.floor(y) + 0.5); return; }
+      }
+      createObject(d.id, Math.floor(v.x) + 0.5, Math.floor(v.y) + 0.5);
+      return;
+    }
+    var list = near === 'center' ? lists.center : near === 'coast' ? lists.coast : lists.grass;
+    if (!list.length) list = lists.land;
+    tile = randomTile(list, true);
+    if (tile < 0) return;
+    createObject(d.id, (tile % W) + 0.5, ((tile / W) | 0) + 0.5);
+  }
+
+  // ----- conditions -----
+  function isNight(t) { return (t % TPD) >= NIGHT_START; }
+  function near(sub, defId, radius) {
+    var r2 = radius * radius, objs = state.objects;
+    for (var i = 0; i < objs.length; i++) {
+      var o = objs[i];
+      if (o.dead || o.def !== defId || o === sub) continue;
+      var dx = o.x - sub.x, dy = o.y - sub.y;
+      if (dx * dx + dy * dy <= r2) return true;
+    }
+    return false;
+  }
+  function test(c, sub, actor) {
+    var isV = sub && sub.needs !== undefined;
+    if (hasOwn(c, 'any')) { for (var i = 0; i < c.any.length; i++) if (test(c.any[i], sub, actor)) return true; return false; }
+    if (hasOwn(c, 'need')) return isV && cmp(sub.needs[c.need] === undefined ? 0 : sub.needs[c.need], c.op, c.value);
+    if (hasOwn(c, 'item')) return isV && cmp(sub.items[c.item] || 0, c.op, c.value);
+    if (hasOwn(c, 'health')) return isV && cmp(sub.health, c.op, c.value);
+    if (hasOwn(c, 'night')) return isNight(state.tick) === c.night;
+    if (hasOwn(c, 'chance')) return rng() < c.chance;
+    if (hasOwn(c, 'memory')) {
+      if (!isV) return false;
+      var lim = c.withinDays * TPD;
+      for (var j = sub.memories.length - 1; j >= 0; j--) {
+        var m = sub.memories[j];
+        if (m.type === c.memory && state.tick - m.t <= lim) return true;
+      }
+      return false;
+    }
+    if (hasOwn(c, 'nearObject')) return near(sub, c.nearObject, c.radius);
+    if (hasOwn(c, 'world')) return cmp(state.vars[c.world] || 0, c.op, c.value);
+    if (hasOwn(c, 'stock')) return !isV && cmp(sub.stock, c.op, c.value);
+    if (hasOwn(c, 'feeling')) return isV && cmp(actor.feel[sub.id] || 0, c.op, c.value);
+    return false;
+  }
+  function testAll(list, sub, actor) {
+    if (!list) return true;
+    for (var i = 0; i < list.length; i++) if (!test(list[i], sub, actor)) return false;
+    return true;
+  }
+
+  // ----- targets -----
+  function holds(v, role) { return v.roles.indexOf(role) >= 0; }
+  function resolveTarget(v, b) {
+    var t = b.target, i;
+    if (t.kind === 'self') return { k: 'self' };
+    if (t.kind === 'wander') {
+      for (i = 0; i < 8; i++) {
+        var a = rng() * 6.283, r = 2 + rng() * 4, x = v.x + Math.cos(a) * r, y = v.y + Math.sin(a) * r;
+        if (land(x, y)) return { k: 'point', x: x, y: y };
+      }
+      return null;
+    }
+    if (t.kind === 'object') {
+      var best = null, bd = Infinity, cands = [], mr2 = t.maxRange === undefined ? Infinity : t.maxRange * t.maxRange;
+      var objs = state.objects;
+      for (i = 0; i < objs.length; i++) {
+        var o = objs[i];
+        if (o.dead || o.def !== t.object) continue;
+        var dx = o.x - v.x, dy = o.y - v.y, d2 = dx * dx + dy * dy;
+        if (d2 > mr2) continue;
+        if (t.filter && !testAll(t.filter, o, v)) continue;
+        if (t.pick === 'random') cands.push(o);
+        else if (d2 < bd) { bd = d2; best = o; }
+      }
+      if (t.pick === 'random') best = cands.length ? rpick(cands) : null;
+      return best ? { k: 'obj', id: best.id } : null;
+    }
+    if (t.kind === 'villager') {
+      var vs = state.villagers, mr = t.maxRange === undefined ? Infinity : t.maxRange * t.maxRange;
+      var ok = function (o) {
+        if (!o.alive || o === v) return false;
+        var ddx = o.x - v.x, ddy = o.y - v.y;
+        if (ddx * ddx + ddy * ddy > mr) return false;
+        if (t.role && !holds(o, t.role)) return false;
+        return !t.filter || testAll(t.filter, o, v);
+      };
+      if (t.pick === 'memoryActor') {
+        for (i = v.memories.length - 1; i >= 0; i--) {
+          if (v.memories[i].type !== t.event) continue;
+          var act = vs[v.memories[i].actor];
+          return (act && act.alive && act !== v && ok(act)) ? { k: 'vil', id: act.id } : null;
+        }
+        return null;
+      }
+      var cs = [], bv = null, bs = Infinity;
+      for (i = 0; i < vs.length; i++) {
+        var w = vs[i];
+        if (!ok(w)) continue;
+        if (t.pick === 'random') { cs.push(w); continue; }
+        var sc;
+        if (t.pick === 'lowestFeeling') sc = v.feel[w.id] || 0;
+        else { var ex = w.x - v.x, ey = w.y - v.y; sc = ex * ex + ey * ey; }
+        if (sc < bs) { bs = sc; bv = w; }
+      }
+      if (t.pick === 'random') bv = cs.length ? rpick(cs) : null;
+      return bv ? { k: 'vil', id: bv.id } : null;
+    }
+    if (t.kind === 'away') {
+      var nb = null, nd = Infinity, ob = state.objects;
+      for (i = 0; i < ob.length; i++) {
+        var q = ob[i];
+        if (q.dead || q.def !== t.object) continue;
+        var qx = q.x - v.x, qy = q.y - v.y, qd = qx * qx + qy * qy;
+        if (qd < nd) { nd = qd; nb = q; }
+      }
+      if (!nb) return null;
+      var vx = v.x - nb.x, vy = v.y - nb.y, len = Math.sqrt(vx * vx + vy * vy) || 1;
+      for (var dist = 4; dist >= 1; dist--) {
+        var px = v.x + vx / len * dist, py = v.y + vy / len * dist;
+        if (land(px, py)) return { k: 'point', x: px, y: py };
+      }
+      return { k: 'point', x: v.x, y: v.y };
+    }
+    return null;
+  }
+
+  function decide(v) {
+    var t = state.tick, cands = [], i;
+    var bl = world.behList;
+    for (i = 0; i < bl.length; i++) {
+      var b = bl[i];
+      if (b.who) {
+        var w = b.who;
+        if (w.trait && !v.traits[w.trait]) continue;
+        if (w.notTrait && v.traits[w.notTrait]) continue;
+        if (w.role && !holds(v, w.role)) continue;
+        if (w.notRole && holds(v, w.notRole)) continue;
+      }
+      if (v.cd[b.id] > t) continue;
+      if (!testAll(b.when, v, v)) continue;
+      var sc = b.priority + (b.urgency ? (v.needs[b.urgency.need] || 0) * b.urgency.scale : 0);
+      cands.push({ s: sc, i: i, b: b });
+    }
+    cands.sort(function (p, q) { return q.s - p.s || p.i - q.i; });
+    for (i = 0; i < cands.length; i++) {
+      var tg = resolveTarget(v, cands[i].b);
+      if (tg) {
+        v.cur = { b: cands[i].b.id, label: cands[i].b.label, tg: tg, phase: 'move', wait: cands[i].b.duration, stuck: 0, mt: 0 };
+        return;
+      }
+    }
+  }
+
+  // ----- effects -----
+  function die(v) {
+    if (!v.alive) return;
+    v.alive = false; v.cur = null; state.stats.deaths++;
+    addLog(v.name + ' has died.', 'death');
+  }
+  function setHealth(v, h) {
+    if (!v.alive) return;
+    v.health = clamp(h, 0, 100);
+    if (v.health <= 0) die(v);
+  }
+  function addFeel(a, b, d) {
+    if (a === b || !a || !b) return;
+    a.feel[b.id] = clamp((a.feel[b.id] || 0) + d, -100, 100);
+  }
+  function remember(v, type, actorId) {
+    v.memories.push({ type: type, actor: actorId, day: Math.floor(state.tick / TPD), t: state.tick });
+    if (v.memories.length > 20) v.memories.shift();
+  }
+  function fmt(text, actor, tv) {
+    return text.replace(/\{actor\}/g, actor.name).replace(/\{target\}/g, tv ? tv.name : 'somebody');
+  }
+  function runEffects(effs, a, tv, to) {
+    for (var i = 0; i < effs.length; i++) {
+      var e = effs[i];
+      var who = e.on === 'target' ? tv : a;
+      if (hasOwn(e, 'need')) {
+        if (who && who.alive) who.needs[e.need] = clamp((who.needs[e.need] || 0) + e.by, 0, 100);
+      } else if (hasOwn(e, 'health')) {
+        if (who) setHealth(who, who.health + (typeof e.health === 'number' ? e.health : e.by));
+      } else if (hasOwn(e, 'item')) {
+        if (who) who.items[e.item] = Math.max(0, (who.items[e.item] || 0) + e.by);
+      } else if (hasOwn(e, 'transfer')) {
+        if (tv) {
+          var from = e.amount >= 0 ? tv : a, dst = e.amount >= 0 ? a : tv;
+          var mv = Math.min(Math.abs(e.amount), from.items[e.transfer] || 0);
+          if (mv > 0) { from.items[e.transfer] -= mv; dst.items[e.transfer] = (dst.items[e.transfer] || 0) + mv; }
+        }
+      } else if (hasOwn(e, 'fromStock')) {
+        if (to && !to.dead) {
+          var m1 = Math.min(e.amount, Math.floor(to.stock));
+          if (m1 > 0) { to.stock -= m1; a.items[e.fromStock] = (a.items[e.fromStock] || 0) + m1; }
+        }
+      } else if (hasOwn(e, 'toStock')) {
+        if (to && !to.dead) {
+          var cap = world.objects[to.def].stock ? world.objects[to.def].stock.max : Infinity;
+          var m2 = Math.min(e.amount, a.items[e.toStock] || 0, Math.max(0, Math.floor(cap - to.stock)));
+          if (m2 > 0) { a.items[e.toStock] -= m2; to.stock += m2; }
+        }
+      } else if (hasOwn(e, 'feeling')) {
+        var tw = e.towards, vs = state.villagers;
+        if (tw === 'target') { if (tv) addFeel(a, tv, e.feeling); }
+        else if (tw === 'self') { if (tv) addFeel(tv, a, e.feeling); }
+        else if (tw === 'both') { if (tv) { addFeel(a, tv, e.feeling); addFeel(tv, a, e.feeling); } }
+        else if (tw === 'nearby') {
+          var r2 = (e.radius || 0) * (e.radius || 0);
+          for (var k = 0; k < vs.length; k++) {
+            var o = vs[k];
+            if (!o.alive || o === a) continue;
+            var dx = o.x - a.x, dy = o.y - a.y;
+            if (dx * dx + dy * dy <= r2) { addFeel(a, o, e.feeling); addFeel(o, a, e.feeling); }
+          }
+        } else if (isObj(tw)) {
+          for (var k2 = 0; k2 < vs.length; k2++) if (vs[k2].alive && holds(vs[k2], tw.role)) addFeel(a, vs[k2], e.feeling);
+        }
+      } else if (hasOwn(e, 'event')) {
+        state.stats.events[e.event] = (state.stats.events[e.event] || 0) + 1;
+        var got = new Set();
+        if (tv && tv !== a) got.add(tv.id);
+        var rr = (e.radius || 0) * (e.radius || 0), vv = state.villagers;
+        for (var k3 = 0; k3 < vv.length; k3++) {
+          var w2 = vv[k3];
+          if (!w2.alive || w2 === a) continue;
+          var ex = w2.x - a.x, ey = w2.y - a.y;
+          if (ex * ex + ey * ey <= rr) got.add(w2.id);
+        }
+        got.forEach(function (id) { if (vv[id].alive && id !== a.id) remember(vv[id], e.event, a.id); });
+      } else if (hasOwn(e, 'spawn')) {
+        if (world.objects[e.spawn] && land(a.x, a.y)) createObject(e.spawn, a.x, a.y);
+      } else if (hasOwn(e, 'remove')) {
+        if (to) removeObject(to);
+      } else if (hasOwn(e, 'world')) {
+        state.vars[e.world] = (state.vars[e.world] || 0) + e.by;
+      } else if (hasOwn(e, 'addTrait')) {
+        if (who && who.alive) who.traits[e.addTrait] = true;
+      } else if (hasOwn(e, 'removeTrait')) {
+        if (who) delete who.traits[e.removeTrait];
+      } else if (hasOwn(e, 'log')) {
+        addLog(fmt(e.log, a, tv), 'log');
+      }
+    }
+  }
+
+  // ----- villager action -----
+  function moveTo(v, c, tx, ty) {
+    var dx = tx - v.x, dy = ty - v.y, d = Math.sqrt(dx * dx + dy * dy) || 1;
+    var nx = v.x + dx / d * SPEED, ny = v.y + dy / d * SPEED;
+    if (land(nx, ny)) { v.x = nx; v.y = ny; }
+    else if (land(nx, v.y)) { v.x = nx; }
+    else if (land(v.x, ny)) { v.y = ny; }
+    else c.stuck++;
+  }
+  function act(v) {
+    var c = v.cur;
+    if (!c) {
+      if ((state.tick + v.id) % 10 === 0) decide(v);
+      return;
+    }
+    var tg = c.tg, tx = 0, ty = 0, to = null, tv = null;
+    if (tg.k === 'obj') {
+      to = objMap.get(tg.id);
+      if (!to) { v.cur = null; return; }
+      tx = to.x; ty = to.y;
+    } else if (tg.k === 'vil') {
+      tv = state.villagers[tg.id];
+      if (!tv.alive) { v.cur = null; return; }
+      tx = tv.x; ty = tv.y;
+    } else if (tg.k === 'point') { tx = tg.x; ty = tg.y; }
+    if (c.phase === 'move') {
+      c.mt++;
+      if (c.mt > 600 || c.stuck > 30) { v.cur = null; return; }
+      if (tg.k !== 'self') {
+        var dx = tx - v.x, dy = ty - v.y, d = Math.sqrt(dx * dx + dy * dy);
+        if (tg.k === 'point') {
+          if (d <= SPEED) { v.x = tx; v.y = ty; c.phase = 'wait'; return; }
+        } else if (d <= 0.9) { c.phase = 'wait'; return; }
+        moveTo(v, c, tx, ty);
+        return;
+      }
+      c.phase = 'wait';
+    }
+    c.wait--;
+    if (c.wait > 0) return;
+    if (tv) {
+      var ex = tv.x - v.x, ey = tv.y - v.y;
+      if (ex * ex + ey * ey > 16) { v.cur = null; return; }
+    }
+    var b = world.behaviors[c.b];
+    v.cur = null;
+    runEffects(b.do, v, tv, to);
+    state.stats.behaviors[b.id] = (state.stats.behaviors[b.id] || 0) + 1;
+    if (b.cooldownDays) v.cd[b.id] = state.tick + b.cooldownDays * TPD;
+  }
+
+  // ----- roles -----
+  function avgFeel(c) {
+    var s = 0, n = 0, vs = state.villagers;
+    for (var i = 0; i < vs.length; i++) {
+      var o = vs[i];
+      if (!o.alive || o === c) continue;
+      s += o.feel[c.id] || 0; n++;
+    }
+    return n ? s / n : 0;
+  }
+  function pickHolder(def, exclude) {
+    var cands = state.villagers.filter(function (v) { return v.alive && !holds(v, def.id) && exclude.indexOf(v.id) < 0; });
+    if (!cands.length) return null;
+    if (def.pick === 'popular') {
+      var best = -Infinity, top = [];
+      cands.forEach(function (c) {
+        var a = avgFeel(c);
+        if (a > best + 1e-9) { best = a; top = [c]; } else if (Math.abs(a - best) <= 1e-9) top.push(c);
+      });
+      return rpick(top);
+    }
+    return rpick(cands);
+  }
+  function dailyRoles() {
+    world.roleList.forEach(function (def) {
+      var holders = state.villagers.filter(function (v) { return holds(v, def.id); });
+      holders.forEach(function (h) {
+        var died = !h.alive, low = h.alive && avgFeel(h) < def.reelectBelow;
+        if (!died && !low) return;
+        h.roles.splice(h.roles.indexOf(def.id), 1);
+        var cur = state.villagers.filter(function (v) { return holds(v, def.id); }).map(function (v) { return v.id; });
+        var nh = pickHolder(def, cur.concat([h.id]));
+        state.stats.events.revolt = (state.stats.events.revolt || 0) + 1;
+        if (nh) {
+          nh.roles.push(def.id);
+          addLog(died ? h.name + ' is gone, so ' + nh.name + ' is the new ' + def.label + '.'
+            : h.name + ' was thrown out as ' + def.label + '. ' + nh.name + ' takes over.', 'log');
+        } else addLog(h.name + ' is no longer ' + def.label + ', and nobody wants the job.', 'log');
+      });
+    });
+  }
+
+  // ----- tick -----
+  function step() {
+    var t = ++state.tick, i, j, k;
+    var vs = state.villagers, objs = state.objects, n0 = objs.length;
+    var counts = dict();
+    var anyDead = false;
+    for (i = 0; i < n0; i++) {
+      var o = objs[i];
+      if (o.dead) continue;
+      var d = world.objects[o.def];
+      o.age++;
+      if (d.lifetimeDays && o.age >= d.lifetimeDays * TPD) { removeObject(o); anyDead = true; continue; }
+      if (d.stock && d.stock.regrowPerDay && o.stock < d.stock.max) o.stock = Math.min(d.stock.max, o.stock + d.stock.regrowPerDay / TPD);
+      if (d.aura) {
+        var ar2 = d.aura.radius * d.aura.radius, ad = d.aura.perDay / TPD;
+        for (j = 0; j < vs.length; j++) {
+          var v1 = vs[j];
+          if (!v1.alive) continue;
+          var dx = v1.x - o.x, dy = v1.y - o.y;
+          if (dx * dx + dy * dy <= ar2) v1.needs[d.aura.need] = clamp((v1.needs[d.aura.need] || 0) + ad, 0, 100);
+        }
+      }
+      if (d.hurts) {
+        var hr2 = d.hurts.radius * d.hurts.radius, hd = d.hurts.perDay / TPD;
+        for (j = 0; j < vs.length; j++) {
+          var v2 = vs[j];
+          if (!v2.alive) continue;
+          var hx = v2.x - o.x, hy = v2.y - o.y;
+          if (hx * hx + hy * hy <= hr2) setHealth(v2, v2.health - hd);
+        }
+      }
+      if (d.spread && o.cv !== t && rng() < d.spread.chancePerDay / TPD) {
+        var sr2 = d.spread.radius * d.spread.radius, vic = [];
+        for (j = 0; j < objs.length; j++) {
+          var q = objs[j];
+          if (q.dead || q === o || q.cv === t || d.spread.onto.indexOf(q.def) < 0) continue;
+          var qx = q.x - o.x, qy = q.y - o.y;
+          if (qx * qx + qy * qy <= sr2) vic.push(q);
+        }
+        if (vic.length) {
+          var tgt = rpick(vic), nd = world.objects[d.spread.becomes];
+          tgt.def = nd.id; tgt.age = 0; tgt.cv = t; tgt.stock = nd.stock ? nd.stock.amount : 0;
+          state.stats.burned++;
+        }
+      }
+      counts[o.def] = (counts[o.def] || 0) + 1;
+    }
+    // respawn
+    world.objList.forEach(function (d2) {
+      if (!d2.respawn) return;
+      respAcc[d2.id] = (respAcc[d2.id] || 0) + d2.respawn.perDay / TPD;
+      while (respAcc[d2.id] >= 1) {
+        respAcc[d2.id] -= 1;
+        if ((counts[d2.id] || 0) < d2.respawn.max) {
+          var tile = randomTile(lists.grass, true);
+          if (tile >= 0) { createObject(d2.id, (tile % W) + 0.5, ((tile / W) | 0) + 0.5); counts[d2.id] = (counts[d2.id] || 0) + 1; }
+        }
+      }
+    });
+    if (anyDead || state.objects.some(function (x) { return x.dead; })) state.objects = state.objects.filter(function (x) { return !x.dead; });
+    // villagers
+    var needList = world.needList;
+    for (i = 0; i < vs.length; i++) {
+      var v = vs[i];
+      if (!v.alive) continue;
+      var dmg = 0;
+      for (k = 0; k < needList.length; k++) {
+        var nd2 = needList[k], val = clamp((v.needs[nd2.id] || 0) + nd2.perDay / TPD, 0, 100);
+        v.needs[nd2.id] = val;
+        if (val >= nd2.damageAt) dmg += nd2.damagePerDay / TPD;
+      }
+      setHealth(v, dmg > 0 ? v.health - dmg : Math.min(100, v.health + 5 / TPD));
+      if (!v.alive) continue;
+      act(v);
+    }
+    if (t % TPD === 0) dailyRoles();
+  }
+
+  function applyPackInternal(pack) {
+    var p = JSON.parse(JSON.stringify(pack)), vs = state.villagers, i;
+    (p.needs || []).forEach(function (n) {
+      world.needs[n.id] = n; world.needList.push(n);
+      vs.forEach(function (v) { v.needs[n.id] = n.start; });
+    });
+    (p.items || []).forEach(function (it) { world.items[it.id] = it; });
+    (p.traits || []).forEach(function (tr) {
+      world.traits[tr.id] = tr;
+      var al = vs.filter(function (v) { return v.alive; });
+      for (i = al.length - 1; i > 0; i--) { var j = rint(i + 1), tmp = al[i]; al[i] = al[j]; al[j] = tmp; }
+      var k = Math.round(tr.share * al.length);
+      for (i = 0; i < k; i++) al[i].traits[tr.id] = true;
+    });
+    (p.roles || []).forEach(function (r) {
+      world.roles[r.id] = r; world.roleList.push(r);
+      for (var c = 0; c < r.count; c++) {
+        var h = pickHolder(r, []);
+        if (h) h.roles.push(r.id);
+      }
+    });
+    (p.objects || []).forEach(function (o) {
+      world.objects[o.id] = o; world.objList.push(o);
+      var cnt = o.place ? o.place.count : 0;
+      for (var c = 0; c < cnt; c++) placeObject(o);
+    });
+    (p.behaviors || []).forEach(function (b) {
+      b.pack = p.id;
+      world.behaviors[b.id] = b; world.behList.push(b);
+    });
+    world.packs.push({ id: p.id, title: p.title, narration: p.narration, drawback: p.drawback || null });
+    addLog(p.narration, 'narration');
+  }
+
+  function applyPack(pack) {
+    var res = validatePack(pack, sim);
+    if (!res.ok) return res;
+    applyPackInternal(pack);
+    return { ok: true, errors: [] };
+  }
+
+  function hash() {
+    var parts = [state.tick, rs], r2 = function (x) { return Math.round(x * 1000); };
+    state.villagers.forEach(function (v) {
+      var needs = Object.keys(v.needs).sort().map(function (k) { return k + ':' + r2(v.needs[k]); });
+      var items = Object.keys(v.items).sort().map(function (k) { return k + ':' + v.items[k]; });
+      var feel = Object.keys(v.feel).sort().map(function (k) { return k + ':' + v.feel[k]; });
+      parts.push([v.id, v.alive ? 1 : 0, r2(v.x), r2(v.y), r2(v.health), needs.join(','), items.join(','),
+        Object.keys(v.traits).sort().join(','), v.roles.join(','), feel.join(','), v.cur ? v.cur.b : '-'].join('|'));
+    });
+    state.objects.forEach(function (o) { if (!o.dead) parts.push([o.id, o.def, r2(o.x), r2(o.y), r2(o.stock), o.age].join('|')); });
+    var s = parts.join('\n');
+    var h1 = 0xdeadbeef ^ 0, h2 = 0x41c6ce57 ^ 0;
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0');
+  }
+
+  function summary() {
+    var vs = state.villagers, alive = vs.filter(function (v) { return v.alive; });
+    var dn = Math.floor(state.tick / TPD), lines = [];
+    lines.push('Year ' + (Math.floor(dn / DPY) + 1) + ', Day ' + (dn % DPY + 1) + (isNight(state.tick) ? ' (night)' : '') + '. ' + alive.length + ' of ' + vs.length + ' villagers alive.');
+    lines.push('Map: island, ' + W + ' by ' + H + ' tiles.');
+    lines.push('Needs: ' + (world.needList.map(function (n) {
+      var avg = alive.length ? alive.reduce(function (s, v) { return s + (v.needs[n.id] || 0); }, 0) / alive.length : 0;
+      return n.id + ' (' + n.label + ', +' + n.perDay + '/day, damage at ' + n.damageAt + ', average now ' + Math.round(avg) + ')';
+    }).join('; ') || 'none'));
+    lines.push('Items: ' + (Object.keys(world.items).map(function (k) {
+      var tot = alive.reduce(function (s, v) { return s + (v.items[k] || 0); }, 0);
+      return k + ' (' + world.items[k].label + ', ' + tot + ' carried)';
+    }).join('; ') || 'none'));
+    lines.push('Traits: ' + (Object.keys(world.traits).map(function (k) {
+      return k + ' (' + world.traits[k].label + ', ' + alive.filter(function (v) { return v.traits[k]; }).length + ' villagers)';
+    }).join('; ') || 'none'));
+    lines.push('Roles: ' + (world.roleList.map(function (r) {
+      var hs = alive.filter(function (v) { return holds(v, r.id); }).map(function (v) { return v.name; });
+      return r.id + ' (' + r.label + ', held by ' + (hs.join(', ') || 'nobody') + ')';
+    }).join('; ') || 'none'));
+    var oc = dict();
+    state.objects.forEach(function (o) { if (!o.dead) oc[o.def] = (oc[o.def] || 0) + 1; });
+    lines.push('Objects: ' + (Object.keys(world.objects).map(function (k) { return k + ' (' + world.objects[k].label + ', ' + (oc[k] || 0) + ' exist)'; }).join('; ') || 'none'));
+    lines.push('Behaviours: ' + world.behList.map(function (b) { return b.id + ' (' + b.label + ')'; }).join('; '));
+    var vk = Object.keys(state.vars);
+    if (vk.length) lines.push('World variables: ' + vk.map(function (k) { return k + '=' + state.vars[k]; }).join(', '));
+    var ev = Object.keys(state.stats.events);
+    if (ev.length) lines.push('Events so far: ' + ev.map(function (k) { return k + ' x' + state.stats.events[k]; }).join(', '));
+    var dp = world.packs.filter(function (p) { return p.drawback; });
+    lines.push('Active packs: ' + (dp.map(function (p) { return p.id + ' (drawback: ' + p.drawback.text + ')'; }).join('; ') || 'none besides the base island'));
+    return lines.join('\n');
+  }
+
+  var sim = {
+    seed: seed, state: state, world: world,
+    applyPack: applyPack,
+    tick: function (n) { n = n === undefined ? 1 : n; for (var i = 0; i < n; i++) step(); },
+    summary: summary, hash: hash
+  };
+
+  genMap();
+  makeVillagers();
+  applyPackInternal(PACKS.base);
+  return sim;
+}
+
+// ===================================================================
+// BOOTSTRAP: data blocks
+// ===================================================================
+PACKS = JSON.parse(document.getElementById('packs-data').textContent);
+AI_INSTRUCTIONS = document.getElementById('ai-instructions').textContent.replace(/^\n+|\n+$/g, '');
+var LTB = window.LTB = { createSim: createSim, validatePack: validatePack, PACKS: PACKS, AI_INSTRUCTIONS: AI_INSTRUCTIONS };
+
+// ===================================================================
+// UI (rendering and controls; reads the sim, never writes pack text as HTML)
+// ===================================================================
+var $ = function (id) { return document.getElementById(id); };
+var params = new URLSearchParams(location.search);
+var seedParam = params.get('seed');
+var sim = createSim({ seed: seedParam !== null ? Number(seedParam) : ((Math.random() * 4294967296) >>> 0) });
+LTB.game = { get sim() { return sim; }, submit: function (t) { submit(t); }, refresh: function () { syncLog(); syncPacks(); } };
+
+var cv = $('cv'), ctx = cv.getContext('2d');
+var speed = 1, acc = 0, lastTs = 0, lastLogN = 0, selected = null, toastTimer = 0;
+var tileCanvas = null, spriteCache = {};
+
+// ask-the-AI hook: one small function a real provider could replace.
+// Return a Promise of the answer text to skip the paste panel; return null to use the manual panel.
+function askTheAI(prompt, command) { return null; }
+
+function buildTileCanvas() {
+  tileCanvas = document.createElement('canvas');
+  tileCanvas.width = W; tileCanvas.height = H;
+  var c = tileCanvas.getContext('2d'), cols = ['#2b6cb0', '#e6d3a3', '#6aa84f'], t = sim.state.tiles;
+  for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) { c.fillStyle = cols[t[y * W + x]]; c.fillRect(x, y, 1, 1); }
+}
+function spriteFor(d) {
+  if (spriteCache[d.id] !== undefined) return spriteCache[d.id];
+  var res = null;
+  if (d.sprite) {
+    var n = d.sprite.rows.length, c = document.createElement('canvas');
+    c.width = n; c.height = n;
+    var g = c.getContext('2d');
+    d.sprite.rows.forEach(function (row, y) {
+      for (var x = 0; x < n; x++) {
+        if (row[x] === '.') continue;
+        g.fillStyle = d.sprite.palette[+row[x]]; g.fillRect(x, y, 1, 1);
+      }
+    });
+    res = c;
+  }
+  spriteCache[d.id] = res;
+  return res;
+}
+
+var view = { s: 10, ox: 0, oy: 0 };
+function resize() {
+  var r = cv.parentElement.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.max(1, Math.floor(r.width * dpr)); cv.height = Math.max(1, Math.floor(r.height * dpr));
+  view.s = Math.min(cv.width / W, cv.height / H);
+  view.ox = (cv.width - W * view.s) / 2; view.oy = (cv.height - H * view.s) / 2;
+}
+
+function nightAmount(t) {
+  var p = t % TPD;
+  if (p < NIGHT_START) return 0;
+  return Math.min(1, (p - NIGHT_START + 1) / 8, (TPD - p) / 8);
+}
+
+function draw() {
+  var st = sim.state;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#0b0f14'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.setTransform(view.s, 0, 0, view.s, view.ox, view.oy);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(tileCanvas, 0, 0, W, H);
+  var i, objs = st.objects;
+  for (i = 0; i < objs.length; i++) {
+    var o = objs[i];
+    if (o.dead) continue;
+    var d = sim.world.objects[o.def], sp = spriteFor(d);
+    if (sp) ctx.drawImage(sp, o.x - 0.55, o.y - 0.55, 1.1, 1.1);
+    else {
+      ctx.fillStyle = d.color || '#999999';
+      ctx.beginPath();
+      if (d.stock) ctx.arc(o.x, o.y, 0.3, 0, 6.283); else ctx.arc(o.x, o.y, 0.42, 0, 6.283);
+      ctx.fill();
+    }
+  }
+  var vs = st.villagers;
+  for (i = 0; i < vs.length; i++) {
+    var v = vs[i];
+    if (!v.alive) continue;
+    var col = 'hsl(' + ((v.id * 47) % 360) + ',55%,58%)';
+    if (selected === v.id) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.08; ctx.beginPath(); ctx.arc(v.x, v.y, 0.55, 0, 6.283); ctx.stroke(); }
+    ctx.fillStyle = col; ctx.fillRect(v.x - 0.15, v.y - 0.1, 0.3, 0.38);
+    ctx.fillStyle = '#f0d2b0'; ctx.beginPath(); ctx.arc(v.x, v.y - 0.24, 0.15, 0, 6.283); ctx.fill();
+    if (v.roles.length) { ctx.fillStyle = '#ffd24a'; ctx.fillRect(v.x - 0.1, v.y - 0.5, 0.2, 0.1); }
+  }
+  var na = nightAmount(st.tick);
+  if (na > 0) { ctx.fillStyle = 'rgba(8,16,48,' + (0.5 * na).toFixed(3) + ')'; ctx.fillRect(0, 0, W, H); }
+}
+
+function addLi(parent, cls, text, atTop) {
+  var li = document.createElement('li');
+  if (cls) li.className = cls;
+  li.textContent = text;
+  if (atTop && parent.firstChild) parent.insertBefore(li, parent.firstChild); else parent.appendChild(li);
+  return li;
+}
+function syncLog() {
+  var logEl = $('log'), log = sim.state.log;
+  for (var i = 0; i < log.length; i++) {
+    var e = log[i];
+    if (e.n <= lastLogN) continue;
+    lastLogN = e.n;
+    addLi(logEl, e.kind, e.text, true);
+    if (e.kind === 'narration') toast(e.text);
+  }
+  while (logEl.children.length > 150) logEl.removeChild(logEl.lastChild);
+}
+function say(text, kind) { addLi($('log'), kind, text, true); }
+function toast(text) {
+  var t = $('toast');
+  t.textContent = text; t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.hidden = true; }, 7000);
+}
+function syncPacks() {
+  var ul = $('packs');
+  var shown = sim.world.packs.filter(function (p) { return p.drawback; });
+  if (ul.children.length === shown.length) return;
+  ul.textContent = '';
+  shown.forEach(function (p) {
+    var li = document.createElement('li'), b = document.createElement('b');
+    b.textContent = p.title;
+    li.appendChild(b);
+    li.appendChild(document.createTextNode(' - ' + p.drawback.label + ': ' + p.drawback.text));
+    ul.appendChild(li);
+  });
+  if (!shown.length) addLi(ul, '', 'Nothing yet. Say something, god.', false);
+}
+var lastHud = '';
+function hud() {
+  var st = sim.state, dn = Math.floor(st.tick / TPD);
+  var alive = st.villagers.filter(function (v) { return v.alive; }).length;
+  var s = 'Year ' + (Math.floor(dn / DPY) + 1) + ', Day ' + (dn % DPY + 1) + '|Villagers: ' + alive;
+  if (s === lastHud) return;
+  lastHud = s;
+  var p = s.split('|');
+  $('date').textContent = p[0]; $('pop').textContent = p[1];
+}
+function vpanel() {
+  var el = $('vpanel');
+  if (selected === null) { el.hidden = true; return; }
+  var v = sim.state.villagers[selected], w = sim.world;
+  el.hidden = false;
+  el.textContent = '';
+  var h = document.createElement('h3'); h.textContent = v.name + (v.alive ? '' : ' (dead)'); el.appendChild(h);
+  var row = function (t) { var d = document.createElement('div'); d.textContent = t; el.appendChild(d); };
+  row('Health: ' + Math.round(v.health));
+  w.needList.forEach(function (n) { row(n.label + ': ' + Math.round(v.needs[n.id] || 0)); });
+  var items = Object.keys(w.items).map(function (k) { return w.items[k].label + ' ' + (v.items[k] || 0); });
+  row('Items: ' + (items.join(', ') || 'none'));
+  var tr = Object.keys(v.traits).map(function (k) { return w.traits[k].label; });
+  row('Traits: ' + (tr.join(', ') || 'none'));
+  var rl = v.roles.map(function (k) { return w.roles[k].label; });
+  row('Roles: ' + (rl.join(', ') || 'none'));
+  row('Doing: ' + (v.alive ? (v.cur ? v.cur.label : 'Deciding') : 'nothing, sadly'));
+  var x = document.createElement('button'); x.type = 'button'; x.textContent = 'x';
+  x.setAttribute('aria-label', 'Close');
+  x.onclick = function () { selected = null; };
+  el.appendChild(x);
+}
+
+function frame(ts) {
+  var dt = lastTs ? (ts - lastTs) / 1000 : 0;
+  lastTs = ts;
+  if (speed > 0) {
+    acc += Math.min(dt, 0.25) * 10 * speed;
+    var n = Math.floor(acc);
+    acc -= n;
+    if (n > 0) sim.tick(Math.min(n, 400));
+  }
+  syncLog(); syncPacks(); hud(); vpanel(); draw();
+  requestAnimationFrame(frame);
+}
+
+// ----- commands -----
+function showAsk(command) {
+  var prompt = AI_INSTRUCTIONS + '\n\n# Current world\n' + sim.summary() + '\n\n# The god\'s command\n' + command;
+  var pending = askTheAI(prompt, command);
+  if (pending && typeof pending.then === 'function') {
+    pending.then(function (txt) { applyAnswer(txt, true); });
+    return;
+  }
+  $('prompt').value = prompt;
+  $('paste').value = '';
+  $('errors').textContent = '';
+  $('copy').textContent = 'Copy';
+  $('ask').hidden = false;
+}
+function parseAnswer(text) {
+  var s = String(text).trim();
+  var m = /```(?:json)?\s*([\s\S]*?)```/i.exec(s);
+  if (m) s = m[1].trim();
+  try { return { value: JSON.parse(s) }; }
+  catch (e) {
+    var a = s.indexOf('{'), b = s.lastIndexOf('}');
+    if (a >= 0 && b > a) { try { return { value: JSON.parse(s.slice(a, b + 1)) }; } catch (e2) { /* fall through */ } }
+    return { error: 'That is not valid JSON (' + e.message + ').' };
+  }
+}
+function showErrors(list) {
+  var ul = $('errors');
+  ul.textContent = '';
+  list.forEach(function (e) { addLi(ul, '', e, false); });
+}
+function applyAnswer(text) {
+  if (!String(text).trim()) { showErrors(['Paste the answer first.']); return; }
+  var p = parseAnswer(text);
+  if (p.error) { showErrors([p.error]); return; }
+  var res = sim.applyPack(p.value);
+  if (!res.ok) { showErrors(res.errors); return; }
+  $('ask').hidden = true;
+  syncLog(); syncPacks();
+}
+function submit(text) {
+  var norm = String(text).trim().toLowerCase();
+  if (!norm) return;
+  if (hasOwn(PACKS, norm) && norm !== 'base') {
+    var pack = PACKS[norm];
+    if (sim.world.packs.some(function (p) { return p.id === pack.id; })) {
+      say('Already done. The villagers are still dealing with "' + pack.title + '", and they ask you to give it a rest.', 'refusal');
+      toast('You already did that one.');
+      return;
+    }
+    var res = sim.applyPack(pack);
+    if (!res.ok) { say('The island refused: ' + res.errors.join(' '), 'refusal'); return; }
+    syncLog(); syncPacks();
+    return;
+  }
+  showAsk(String(text).trim());
+}
+
+$('cmdbar').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var box = $('cmd'), text = box.value;
+  if (!text.trim()) return;
+  box.value = '';
+  submit(text);
+});
+$('apply').addEventListener('click', function () { applyAnswer($('paste').value); });
+$('cancel').addEventListener('click', function () { $('ask').hidden = true; });
+$('copy').addEventListener('click', function () {
+  var ta = $('prompt'), done = function () { $('copy').textContent = 'Copied'; };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(done, function () { ta.select(); document.execCommand('copy'); done(); });
+  else { ta.select(); document.execCommand('copy'); done(); }
+});
+Array.prototype.forEach.call(document.querySelectorAll('#speeds button'), function (b) {
+  b.addEventListener('click', function () {
+    speed = Number(b.getAttribute('data-speed'));
+    Array.prototype.forEach.call(document.querySelectorAll('#speeds button'), function (x) { x.classList.toggle('on', x === b); });
+  });
+});
+cv.addEventListener('click', function (e) {
+  var r = cv.getBoundingClientRect(), dpr = cv.width / r.width;
+  var wx = ((e.clientX - r.left) * dpr - view.ox) / view.s, wy = ((e.clientY - r.top) * dpr - view.oy) / view.s;
+  var best = null, bd = 1.2;
+  sim.state.villagers.forEach(function (v) {
+    if (!v.alive) return;
+    var d = Math.sqrt((v.x - wx) * (v.x - wx) + (v.y - wy) * (v.y - wy));
+    if (d < bd) { bd = d; best = v.id; }
+  });
+  selected = best;
+});
+window.addEventListener('resize', resize);
+
+buildTileCanvas();
+resize();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
