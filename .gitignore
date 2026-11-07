@@ -1,0 +1,18 @@
+# secrets
+.env*
+*.pem
+*.key
+credentials*.json
+token*.json
+# editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+# Python and Node leftovers
+__pycache__/
+*.pyc
+node_modules/
+# test output
+test-results/
+playwright-report/
