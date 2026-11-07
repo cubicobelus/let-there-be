@@ -952,23 +952,36 @@ def main():
                 w1, w2, p1, p2 = single[k]
                 report.append(f"{k:36}{str(w1) + '/6':>9}{str(w2) + '/6':>9}   {p1} | {p2}")
             report.append("")
-            cands_c = [["invent farming", "domesticate chickens", "teach them to fish"],
-                       ["invent farming", "teach them to fish", "open a bakery"],
-                       ["domesticate chickens", "teach them to fish", "invent farming", "invent beds"]]
-            cands_h = [["invent farming", "domesticate chickens", "open a bakery", "drop a meteor"],
-                       ["invent farming", "drop a meteor", "domesticate chickens"],
-                       ["invent farming", "domesticate chickens", "open a bakery"]]
-            best = {}
-            for name, cands in (("crowded", cands_c), ("hold_on", cands_h)):
-                rows = [(wins(rate(s, name)), s) for s in cands]
-                best[name] = max(rows, key=lambda x: x[0])
-                report.append(f"SETS TRYING TO WIN {name.upper()} (wins out of 6, need 4):")
-                for w, s in rows:
-                    report.append(f"  {w}/6  {' + '.join(s)}")
+            FOOD = {"invent farming", "domesticate chickens", "teach them to fish", "open a bakery"}
+            cands = {
+                "crowded": [
+                    ["build a school", "teach them to fish", "flood the island"],
+                    ["drop a meteor", "send a plague", "unlock fire", "flood the island"],
+                    ["invent money", "start a cult of the tallest tree", "build a school", "everyone wears hats", "teach squirrels to talk"],
+                    ["invent farming", "domesticate chickens", "teach them to fish"],
+                    ["invent farming", "teach them to fish", "open a bakery"],
+                ],
+                "hold_on": [
+                    ["invent farming", "invent medicine", "invent marriage"],
+                    ["drop a meteor", "unlock fire", "invent money"],
+                    ["invent farming", "domesticate chickens", "open a bakery", "drop a meteor"],
+                    ["invent farming", "drop a meteor", "domesticate chickens"],
+                ],
+            }
+            winners = {}
+            for name in ("crowded", "hold_on"):
+                rows = [(wins(rate(st, name)), st) for st in cands[name]]
+                winners[name] = [(w, st) for w, st in rows if w >= 4]
+                report.append(f"SETS OF 3 TO 5 COMMANDS, {name.upper()} (wins out of 6, a winning set needs 4; food commands counted):")
+                for w, st in rows:
+                    report.append(f"  {w}/6  food {sum(1 for k in st if k in FOOD)}  {' + '.join(st)}")
                 report.append("")
-            ok = not too_strong and best["crowded"][0] >= 4 and best["hold_on"][0] >= 4
-            return ok, (f"single commands too strong {too_strong}; best crowded set {best['crowded'][0]}/6 ({' + '.join(best['crowded'][1])}); "
-                        f"best hold_on set {best['hold_on'][0]}/6 ({' + '.join(best['hold_on'][1])})")
+            lite = lambda ws: [w for w in ws if sum(1 for k in w[1] if k in FOOD) <= 1]
+            ok = (not too_strong and len(winners["crowded"]) >= 3 and len(lite(winners["crowded"])) >= 2
+                  and len(winners["hold_on"]) >= 2 and len(lite(winners["hold_on"])) >= 1)
+            return ok, (f"single commands too strong {too_strong}; crowded winning sets {len(winners['crowded'])} "
+                        f"({len(lite(winners['crowded']))} with at most one food command); hold_on winning sets {len(winners['hold_on'])} "
+                        f"({len(lite(winners['hold_on']))} with at most one food command)")
         check("33 library: no single command wins a goal, but a set of 3 to 5 wins each", t33)
 
         SHOTS.mkdir(exist_ok=True)
