@@ -43,6 +43,43 @@ HELPERS = r"""
     };
   };
   window.__summarize = summarize;
+  // plain packs used by the scenario checks
+  window.__packs = {
+    orchards: {
+      id: 'orchards', title: 'Orchards', narration: 'Forty orchards appear, each with its own wasps.',
+      objects: [{ id: 'orchard', label: 'Orchard', color: '#c04a2b', place: { count: 40, near: 'anywhere' },
+        stock: { item: 'food', amount: 6, max: 12, regrowPerDay: 6 }, respawn: { perDay: 3, max: 40 } }],
+      behaviors: [{ id: 'pick_fruit', label: 'Picking fruit', when: [{ item: 'food', op: '<', value: 3 }], priority: 21,
+        urgency: { need: 'hunger', scale: 0.6 },
+        target: { kind: 'object', object: 'orchard', filter: [{ stock: true, op: '>=', value: 1 }], pick: 'nearest' },
+        duration: 8, do: [{ fromStock: 'food', amount: 2 }, { health: -3 }] }],
+      drawback: { label: 'Wasps', text: 'Every orchard is full of wasps, and they sting.', rules: ['pick_fruit'] }
+    },
+    swarm: {
+      id: 'swarm', title: 'Swarm', narration: 'Four hundred people turn up at once.', newcomers: { count: 400 },
+      behaviors: [{ id: 'grumble', label: 'Grumbling', priority: 5, target: { kind: 'self' }, duration: 2, do: [] }],
+      drawback: { label: 'Crowding', text: 'Everyone is crowded and hungry.', rules: ['grumble'] }
+    }
+  };
+  // run one scenario for its full length (or until it ends) with an optional pack, and report
+  window.__scen = (seed, scenario, pack) => {
+    const sim = LTB.createSim({ seed, scenario });
+    if (pack) {
+      const r = sim.applyPack(window.__packs[pack]);
+      if (!r.ok) throw new Error(pack + ': ' + r.errors.join('; '));
+      sim.useCommand();
+    }
+    const pops = [];
+    let below120 = null;
+    for (let d = 0; d < 144 && sim.state.run.status === 'playing'; d++) {
+      sim.tick(120);
+      if (d % 12 === 11) pops.push(sim.state.alive);
+      if (below120 === null && pack === 'swarm' && sim.state.alive < 120) below120 = d + 1;
+    }
+    const r = sim.state.run;
+    return { seed, status: r.status, cause: r.cause, day: sim.state.tick / 120, score: r.score, alive: sim.state.alive,
+      pops, below120, commandsUsed: r.commandsUsed, breakdown: r.breakdown };
+  };
   window.__run = (seed, names, ticks) => {
     const sim = LTB.createSim({ seed });
     for (const n of names) {
@@ -69,7 +106,7 @@ def check(name, fn):
     print(("PASS " if ok else "FAIL ") + name + (" - " + detail if detail else ""), flush=True)
 
 
-def new_page(browser, errors, query="?seed=3"):
+def new_page(browser, errors, query="?seed=3&mode=free"):
     page = browser.new_page(viewport={"width": 1300, "height": 900})
     page.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
     page.on("console", lambda m: errors.append("console: " + m.text) if m.type == "error" else None)
@@ -102,7 +139,7 @@ def main():
             n = page.evaluate("LTB.game.sim.state.villagers.length")
             box = page.locator("#cmd")
             ph = box.get_attribute("placeholder")
-            return (n == 50 and box.count() == 1 and ph == "Speak, god..." and not errors,
+            return (n == 50 and box.count() == 1 and ph == "Say the word..." and not errors,
                     f"villagers={n}, errors={errors[:3]}")
         check("1 page loads cleanly with 50 villagers and a text box", t1)
 
@@ -389,12 +426,388 @@ def main():
             return (r < 5000, f"{r / 1000:.2f} s for 1 simulated year with all three packs")
         check("11 speed: one year with all packs under 5 seconds", t11)
 
+        # ---------- births, scenarios, scoring, panels ----------
+        S8 = [1, 2, 3, 4, 5, 6, 7, 8]
+        new_errors = []
+
+        # 15. births
+        def t15():
+            r = page.evaluate("""() => {
+              const run = (seed) => {
+                const s = LTB.createSim({ seed });
+                s.tick(3 * 1440);
+                const v = s.state.villagers;
+                return { births: s.state.stats.births, n: v.length, idsOk: v.every((x, i) => x.id === i),
+                  aliveOk: v.filter(x => x.alive).length === s.state.alive, hash: s.hash(),
+                  namesOk: v.every(x => typeof x.name === 'string' && x.name.length > 0) };
+              };
+              const a = run(4), b = run(4), c = run(5);
+              return { a, same: a.hash === b.hash, differ: a.hash !== c.hash };
+            }""")
+            a = r["a"]
+            ok = a["births"] > 0 and a["n"] == 50 + a["births"] and a["idsOk"] and a["aliveOk"] and a["namesOk"] and r["same"] and r["differ"]
+            return ok, f"births in 3 years {a['births']}, villagers {a['n']}, ids match index {a['idsOk']}, same-seed hash equal {r['same']}"
+        check("15 births add villagers with correct ids and keep determinism", t15)
+
+        # 16. newcomers placement and defaults
+        def t16():
+            r = page.evaluate("""() => {
+              const s = LTB.createSim({ seed: 6 });
+              const orig = s.state.villagers.slice();
+              const res = s.applyPack({ id: 'crowd', title: 'Crowd', narration: 'More.', newcomers: { count: 30 },
+                behaviors: [{ id: 'mill', label: 'Milling', priority: 1, target: { kind: 'self' }, duration: 1, do: [] }],
+                drawback: { label: 'Crowds', text: 'Crowds.', rules: ['mill'] } });
+              const fresh = s.state.villagers.slice(50);
+              const landOk = fresh.every(v => s.state.tiles[Math.floor(v.y) * s.state.W + Math.floor(v.x)] > 0);
+              const near = fresh.every(v => orig.some(o => Math.hypot(o.x - v.x, o.y - v.y) < 4.5));
+              const clean = fresh.every(v => v.health === 100 && Object.keys(v.items).length === 0 && Object.keys(v.feel).length === 0
+                && v.roles.length === 0 && Object.keys(v.traits).length === 0 && v.alive && v.needs.hunger === 20 && v.needs.tiredness === 20);
+              return { ok: res.ok, n: fresh.length, ids: s.state.villagers.every((x, i) => x.id === i), landOk, near, clean, alive: s.state.alive };
+            }""")
+            ok = r["ok"] and r["n"] == 30 and r["ids"] and r["landOk"] and r["near"] and r["clean"] and r["alive"] == 80
+            return ok, str(r)
+        check("16 newcomers land near the others with default needs and nothing else", t16)
+
+        # 17. validation of newcomers and birth
+        def t17():
+            r = page.evaluate("""() => {
+              const beh = (d) => ({ id: 'bb', label: 'B', priority: 1, duration: 1, target: { kind: 'self' }, do: d });
+              const pack = (over, d) => Object.assign({ id: 'pp', title: 'P', narration: 'P.', behaviors: [beh(d || [])],
+                drawback: { label: 'x', text: 'x', rules: ['bb'] } }, over);
+              const bad = {
+                'count 0': pack({ newcomers: { count: 0 } }), 'count 401': pack({ newcomers: { count: 401 } }),
+                'count 1.5': pack({ newcomers: { count: 1.5 } }), 'count text': pack({ newcomers: { count: '5' } }),
+                'count negative': pack({ newcomers: { count: -3 } }), 'count NaN': pack({ newcomers: { count: NaN } }),
+                'extra field': pack({ newcomers: { count: 5, extra: 1 } }), 'not object': pack({ newcomers: 5 }),
+                'no count': pack({ newcomers: {} }),
+                'birth 0': pack({}, [{ birth: 0 }]), 'birth 6': pack({}, [{ birth: 6 }]), 'birth 2.5': pack({}, [{ birth: 2.5 }]),
+                'birth text': pack({}, [{ birth: '1' }]), 'birth extra': pack({}, [{ birth: 1, on: 'self' }]),
+              };
+              const good = { 'count 1': pack({ newcomers: { count: 1 } }), 'count 400': pack({ newcomers: { count: 400 } }),
+                'birth 1': pack({}, [{ birth: 1 }]), 'birth 5': pack({}, [{ birth: 5 }]) };
+              const out = { acceptedBad: [], rejectedGood: [], changed: [] };
+              for (const [k, p] of Object.entries(bad)) {
+                const s = LTB.createSim({ seed: 2 }), h = s.hash();
+                if (s.applyPack(p).ok) out.acceptedBad.push(k);
+                if (s.hash() !== h || s.state.villagers.length !== 50) out.changed.push(k);
+              }
+              for (const [k, p] of Object.entries(good)) {
+                const s = LTB.createSim({ seed: 2 });
+                const r = s.applyPack(p);
+                if (!r.ok) out.rejectedGood.push(k + ': ' + r.errors.join(' '));
+              }
+              // birth works as an effect with no target
+              const t = LTB.createSim({ seed: 2 });
+              t.applyPack(pack({}, [{ birth: 2 }]));
+              return out;
+            }""")
+            return (not r["acceptedBad"] and not r["rejectedGood"] and not r["changed"]), str(r)
+        check("17 validator rejects bad newcomers and birth, accepts good ones, atomically", t17)
+
+        # 18. the 400 cap
+        def t18():
+            r = page.evaluate("""() => {
+              const s = LTB.createSim({ seed: 3 });
+              s.applyPack(window.__packs.swarm);
+              const afterFirst = s.state.alive;
+              const more = s.applyPack({ id: 'more', title: 'More', narration: 'Even more.', newcomers: { count: 50 },
+                behaviors: [{ id: 'mill', label: 'Milling', priority: 1, target: { kind: 'self' }, duration: 1, do: [] }],
+                drawback: { label: 'x', text: 'x', rules: ['mill'] } });
+              const afterSecond = s.state.alive;
+              // everyone has children as fast as possible with food to burn: the island must still stop at 400
+              const t = LTB.createSim({ seed: 3 });
+              t.applyPack({ id: 'baby_boom', title: 'Baby boom', narration: 'Babies.',
+                behaviors: [{ id: 'boom', label: 'Booming', priority: 99, duration: 0, target: { kind: 'self' }, do: [{ birth: 5 }] }],
+                drawback: { label: 'Babies', text: 'So many babies.', rules: ['boom'] } });
+              let maxAlive = 0, atTick = null;
+              for (let i = 0; i < 40; i++) { t.tick(10); maxAlive = Math.max(maxAlive, t.state.alive); if (atTick === null && t.state.alive >= 400) atTick = t.state.tick; }
+              return { afterFirst, afterSecond, moreOk: more.ok, maxAlive, reached: atTick, births: t.state.stats.births, len: t.state.villagers.length };
+            }""")
+            ok = r["afterFirst"] == 400 and r["afterSecond"] == 400 and r["moreOk"] and r["maxAlive"] == 400 and r["births"] == r["len"] - 50
+            return ok, str(r)
+        check("18 the island never holds more than 400 villagers", t18)
+
+        # 19. design requirements a, b, c
+        def t19():
+            nothing_c = page.evaluate("(seeds) => seeds.map(s => window.__scen(s, 'crowded', null))", S8)
+            nothing_h = page.evaluate("(seeds) => seeds.map(s => window.__scen(s, 'hold_on', null))", S8)
+            orch_c = page.evaluate("(seeds) => seeds.map(s => window.__scen(s, 'crowded', 'orchards'))", S8)
+            orch_h = page.evaluate("(seeds) => seeds.map(s => window.__scen(s, 'hold_on', 'orchards'))", S8)
+            brute = page.evaluate("(seeds) => seeds.map(s => window.__scen(s, 'crowded', 'swarm'))", S8)
+            fmt = lambda rs: [f"{r['seed']}:{r['status']}/{r['cause'] or '-'}@d{int(r['day'])} pop{r['alive']} score{r['score']}" for r in rs]
+            a1 = sum(1 for r in nothing_c if r["status"] == "lost" and r["cause"] == "deadline")
+            a2 = sum(1 for r in nothing_h if r["status"] == "lost")
+            b1 = sum(1 for r in orch_c if r["status"] == "won")
+            b2 = sum(1 for r in orch_h if r["status"] == "won")
+            c1 = sum(1 for r in brute if r["status"] != "won")
+            # year the unaided crowded population levels off: first year end after which it stays within 15% of its final value
+            levels = []
+            for r in nothing_c:
+                p = r["pops"]
+                fin = sum(p[-3:]) / 3
+                y = next((i + 1 for i in range(len(p)) if all(abs(x - fin) <= 0.15 * fin for x in p[i:])), None)
+                levels.append(y)
+            print("  a) crowded, no commands:", fmt(nothing_c))
+            print("  a) hold_on, no commands:", fmt(nothing_h))
+            print("  b) orchards in crowded:", fmt(orch_c))
+            print("  b) orchards in hold_on:", fmt(orch_h))
+            print("  c) 400 newcomers in crowded:", fmt(brute), "day pop first below 120:", [r["below120"] for r in brute])
+            print("  e) crowded, no commands: population levels off in year", levels, "end-of-year populations seed 1:", nothing_c[0]["pops"])
+            ok = a1 >= 6 and a2 >= 6 and b1 >= 5 and b2 >= 5 and c1 >= 6
+            return ok, f"a) crowded lost by deadline {a1}/8, hold_on lost {a2}/8; b) orchards won crowded {b1}/8, hold_on {b2}/8; c) brute force did not win {c1}/8"
+        check("19 design: doing nothing loses, orchards win, brute force fails (8 seeds)", t19)
+
+        # 20. score arithmetic
+        def t20():
+            r = page.evaluate("""() => {
+              const s = LTB.createSim({ seed: 1, scenario: 'crowded' });
+              s.applyPack(window.__packs.orchards);
+              s.useCommand(); s.useCommand(); s.useCommand();
+              s.tick(144 * 120);
+              const run = s.state.run;
+              return { status: run.status, score: run.score, used: run.commandsUsed, limit: run.commandLimit, day: s.state.tick / 120,
+                alive: s.state.alive, breakdown: run.breakdown, held: run.heldDays };
+            }""")
+            yrs = (144 - int(r["day"])) // 12
+            expect = 500 + 150 * (8 - 3) + 40 * yrs + 2 * r["alive"]
+            total = sum(b["points"] for b in r["breakdown"])
+            ok = r["status"] == "won" and r["used"] == 3 and r["score"] == expect == total and r["held"] >= 12 and len(r["breakdown"]) == 4
+            return ok, f"won on day {int(r['day'])} with 3 commands used, {yrs} whole years left, {r['alive']} alive: score {r['score']}, expected {expect}"
+        check("20 score arithmetic for a won run", t20)
+
+        # 21. lost runs score nothing, and a stopped sim stays stopped
+        def t21():
+            r = page.evaluate("""() => {
+              const out = [];
+              for (const sc of ['crowded', 'hold_on']) {
+                const s = LTB.createSim({ seed: 2, scenario: sc });
+                s.tick(144 * 120);
+                const run = s.state.run, t = s.state.tick, h = s.hash();
+                s.tick(500);
+                out.push({ sc, status: run.status, score: run.score, pts: run.breakdown.reduce((a, b) => a + b.points, 0), reason: !!run.reason,
+                  stopped: s.state.tick === t && s.hash() === h, used: s.useCommand() });
+              }
+              return out;
+            }""")
+            ok = all(x["status"] == "lost" and x["score"] == 0 and x["pts"] == 0 and x["reason"] and x["stopped"] and x["used"] is False for x in r)
+            return ok, str(r)
+        check("21 a lost run scores 0, stops the sim and refuses commands", t21)
+
+        # 22. data driven rules: blights and holding
+        def t22():
+            r = page.evaluate("""() => {
+              const s = LTB.createSim({ seed: 3, scenario: 'hold_on' });
+              s.applyPack(window.__packs.orchards);
+              const count = () => s.state.objects.filter(o => !o.dead && (o.def === 'orchard' || o.def === 'bush')).length;
+              const granary = LTB.createSim({ seed: 3, scenario: 'hold_on' });
+              granary.applyPack(LTB.PACKS['make a government']);
+              const g0 = granary.state.objects.filter(o => o.def === 'granary').length;
+              s.state.villagers.forEach(v => { v.health = 100; });
+              const blights = [];
+              for (let d = 1; d <= 130 && s.state.run.status === 'playing'; d++) {
+                const before = s.state.stats.events.blight || 0;
+                s.tick(120);
+                if ((s.state.stats.events.blight || 0) > before) blights.push(d);
+              }
+              granary.tick(120 * 12 * 5);
+              const logs = s.state.log.filter(l => /blight/i.test(l.text)).length;
+              return { blights, logs, g0, g1: granary.state.objects.filter(o => o.def === 'granary').length, noScenario: LTB.createSim({ seed: 1 }).state.run.scenario };
+            }""")
+            ok = r["blights"] == [24, 48, 72, 96, 120] and r["logs"] >= 5 and r["g0"] == 1 and r["g1"] == 1 and r["noScenario"] is None
+            return ok, str(r)
+        check("22 blights come at the start of years 3, 5, 7, 9, 11 and spare granaries", t22)
+
+        # 23. command limit and what counts, through the UI
+        def tiny(i):
+            import json
+            return json.dumps({"id": f"tiny{i}", "title": f"Tiny {i}", "narration": f"Tiny thing {i}.",
+                               "behaviors": [{"id": f"tiny_b{i}", "label": "Tiny", "priority": 1, "target": {"kind": "self"}, "duration": 1, "do": []}],
+                               "drawback": {"label": "Tiny", "text": "Tiny trouble.", "rules": [f"tiny_b{i}"]}})
+
+        def say_cmd(pg, text, answer=None):
+            pg.fill("#cmd", text)
+            pg.press("#cmd", "Enter")
+            pg.wait_for_timeout(60)
+            if answer is not None:
+                pg.fill("#paste", answer)
+                pg.click("#apply")
+                pg.wait_for_timeout(60)
+
+        lim = new_page(browser, new_errors, "?seed=1&mode=hold_on")
+
+        def t23():
+            lim.click('#speeds button[data-speed="0"]')
+            top = lim.inner_text("#runbar")
+            counts = []
+            for i in range(6):
+                say_cmd(lim, f"make thing number {i}", tiny(i))
+                counts.append(lim.evaluate("LTB.game.sim.state.run.commandsUsed"))
+            shown = lim.inner_text("#cmds")
+            say_cmd(lim, "one more thing")
+            asked = lim.is_visible("#ask")
+            first = lim.locator("#log li").first
+            refused = "refusal" in (first.get_attribute("class") or "") and "all 6 commands" in first.inner_text()
+            builtin = lim.evaluate("LTB.game.sim.world.packs.length")
+            say_cmd(lim, "unlock fire")
+            still = lim.evaluate("LTB.game.sim.state.run.commandsUsed")
+            fire = lim.evaluate("LTB.game.sim.world.packs.some(p => p.id === 'fire')")
+            ok = (counts == [1, 2, 3, 4, 5, 6] and shown == "Commands: 6/6" and not asked and refused and still == 6 and not fire
+                  and "Commands: 0/6" in top and "Keep 30 villagers" in top and "floor 30" in top)
+            return ok, f"counts {counts}, counter shows '{shown}', 7th refused={refused}, ask opened={asked}, built-in at the limit applied={fire}, top bar '{top}'"
+        check("23 command limit is enforced in the UI and the counter stays", t23)
+
+        # 24. refused, cancelled and invalid commands do not count; word limit
+        cnt = new_page(browser, new_errors, "?seed=2&mode=crowded")
+
+        def t24():
+            cnt.click('#speeds button[data-speed="0"]')
+            used = lambda: cnt.evaluate("LTB.game.sim.state.run.commandsUsed")
+            res = {}
+            say_cmd(cnt, "make it rain frogs")
+            res["opened"] = cnt.is_visible("#ask")
+            cnt.click("#cancel")
+            res["cancel"] = used()
+            say_cmd(cnt, "make it rain frogs", "not json")
+            res["invalid"] = used()
+            cnt.fill("#paste", '{"id":"oops","title":"Oops","narration":"Oops."}')
+            cnt.click("#apply")
+            res["invalid2"] = used()
+            cnt.click("#cancel")
+            say_cmd(cnt, "unlock fire")
+            res["builtin"] = used()
+            say_cmd(cnt, "unlock fire")
+            res["refused"] = used()
+            say_cmd(cnt, " ".join(["word"] * 26))
+            res["long_ask"] = cnt.is_visible("#ask")
+            res["long"] = used()
+            first = cnt.locator("#log li").first
+            res["long_msg"] = "refusal" in (first.get_attribute("class") or "") and "25 words" in first.inner_text()
+            say_cmd(cnt, " ".join(["word"] * 25))
+            res["ok25_ask"] = cnt.is_visible("#ask")
+            cnt.click("#cancel")
+            res["ok25"] = used()
+            say_cmd(cnt, "make hats", tiny(50))
+            res["valid"] = used()
+            ok = (res["opened"] and res["cancel"] == 0 and res["invalid"] == 0 and res["invalid2"] == 0 and res["builtin"] == 1 and res["refused"] == 1
+                  and not res["long_ask"] and res["long"] == 1 and res["long_msg"] and res["ok25_ask"] and res["ok25"] == 1 and res["valid"] == 2)
+            return ok, str(res)
+        check("24 refused, cancelled, invalid and over-long commands do not count; 25 words is fine", t24)
+
+        # 25. start panel
+        def t25():
+            sp = new_page(browser, new_errors, "")
+            sp.wait_for_timeout(300)
+            vis = sp.is_visible("#start")
+            btns = sp.locator("#scen button").count()
+            text = sp.inner_text("#startbox")
+            t0 = sp.evaluate("LTB.game.sim.state.tick")
+            sp.wait_for_timeout(700)
+            paused = sp.evaluate("LTB.game.sim.state.tick") == t0
+            villagers = sp.evaluate("LTB.game.sim.state.alive")
+            SHOTS.mkdir(exist_ok=True)
+            sp.screenshot(path=str(SHOTS / "start-panel.png"))
+            sp.click('#scen button[data-mode="crowded"]')
+            sp.wait_for_timeout(700)
+            started = (not sp.is_visible("#start")) and sp.evaluate("LTB.game.sim.state.tick") > t0 and sp.evaluate("LTB.game.sim.state.run.scenario") == "crowded"
+            bar = sp.inner_text("#runbar")
+            seed_only = new_page(browser, new_errors, "?seed=5")
+            seed_shown = seed_only.is_visible("#start")
+            skipped = {}
+            for m in ("free", "crowded", "hold_on"):
+                q = new_page(browser, new_errors, "?mode=" + m + "&seed=4")
+                skipped[m] = (not q.is_visible("#start"), q.is_visible("#runbar"), q.evaluate("LTB.game.sim.state.run.scenario"))
+                q.close()
+            seed_only.close()
+            sp.close()
+            ok = (vis and btns == 3 and "Standing room only" in text and "Bad years" in text and "Free play" in text and "Commands: 8" in text
+                  and "Deadline: 12 years" in text and "Reach 120 villagers" in text and paused and villagers == 50 and started
+                  and "Commands: 0/8" in bar and "Population" in bar
+                  and skipped == {"free": (True, False, None), "crowded": (True, True, "crowded"), "hold_on": (True, True, "hold_on")})
+            return ok, f"panel shown {vis}, buttons {btns}, sim paused behind it {paused}, started on click {started}, top bar '{bar}', mode skips {skipped}, ?seed alone shows panel {seed_shown}"
+        check("25 start panel shows with no mode, pauses the sim, and ?mode= skips it", t25)
+
+        # 26. end panel and Play again
+        def t26():
+            res = {}
+            for kind in ("won", "lost"):
+                pg = new_page(browser, new_errors, "?seed=1&mode=crowded")
+                pg.click('#speeds button[data-speed="0"]')
+                pg.evaluate("""(kind) => {
+                  const s = LTB.game.sim;
+                  if (kind === 'won') { s.applyPack(window.__packs.orchards); s.useCommand(); s.useCommand(); }
+                  s.tick(144 * 120);
+                }""", kind)
+                pg.wait_for_timeout(400)
+                vis = pg.is_visible("#end")
+                title = pg.inner_text("#end-title")
+                funny = pg.inner_text("#end-funny")
+                reason = pg.inner_text("#end-reason")
+                lines = pg.locator("#end-score li").all_inner_texts()
+                score = pg.evaluate("LTB.game.sim.state.run.score")
+                if kind == "won":
+                    pg.screenshot(path=str(SHOTS / "end-panel.png"))
+                else:
+                    pg.screenshot(path=str(SHOTS / "end-panel-lost.png"))
+                ticks = pg.evaluate("LTB.game.sim.state.tick")
+                pg.wait_for_timeout(300)
+                frozen = pg.evaluate("LTB.game.sim.state.tick") == ticks
+                refused = False
+                pg.evaluate("LTB.game.submit('make a thing')")
+                refused = not pg.is_visible("#ask") and pg.evaluate("LTB.game.sim.state.run.commandsUsed") == (2 if kind == "won" else 0)
+                pg.click("#again")
+                pg.wait_for_timeout(200)
+                back = pg.is_visible("#start") and not pg.is_visible("#end") and not pg.is_visible("#runbar")
+                res[kind] = dict(vis=vis, title=title, funny=bool(funny.strip()), reason=reason, lines=lines, score=score, frozen=frozen, refused=refused, back=back)
+                pg.close()
+            w, l = res["won"], res["lost"]
+            wok = (w["vis"] and w["title"] == "You won" and w["frozen"] and w["refused"] and w["back"] and w["funny"]
+                   and len(w["lines"]) == 5 and w["lines"][0].startswith("Victory") and "Unused commands (6 x 150)" in w["lines"][1] and w["lines"][-1].replace("\n", " ").endswith(str(w["score"])))
+            lok = (l["vis"] and l["title"] == "You lost" and l["score"] == 0 and l["frozen"] and l["refused"] and l["back"] and l["funny"]
+                   and l["lines"][-1].replace("\n", " ").endswith(" 0") and "years ran out" in l["reason"])
+            return wok and lok, f"won: {w['lines']}; lost: {l['lines']} / {l['reason']}"
+        check("26 end panel shows the score breakdown, and Play again returns to the start panel", t26)
+
+        # 27. the word god never appears
+        def t27():
+            import re
+            src = INDEX.read_text(encoding="utf-8")
+            hits = [m.group(0) for m in re.finditer(r"\bgod\b", src, re.I)]
+            gp = new_page(browser, new_errors, "?seed=3&mode=free")
+            gp.fill("#cmd", "make a tree")
+            gp.press("#cmd", "Enter")
+            prompt = gp.input_value("#prompt")
+            packs = gp.inner_text("#packs")
+            ph = gp.get_attribute("#cmd", "placeholder")
+            body = gp.inner_text("body")
+            gp.close()
+            ok = (not hits and "# The command\nmake a tree" in prompt and re.search(r"\bgod\b", prompt + packs + ph + body, re.I) is None
+                  and "Nothing yet. Say something." in packs and ph == "Say the word...")
+            return ok, f"matches in source {hits}, prompt heading ok {'# The command' in prompt}"
+        check("27 the word god appears nowhere", t27)
+
+        # 28. speed with 400 villagers
+        def t28():
+            r = page.evaluate("""() => {
+              const t0 = performance.now();
+              const sim = LTB.createSim({ seed: 9 });
+              sim.applyPack(window.__packs.swarm);
+              // keep them fed so the whole crowd stays alive and busy for the full year
+              sim.world.needs.hunger.perDay = 0;
+              for (const n of ['unlock fire', 'introduce crime', 'make a government']) sim.applyPack(LTB.PACKS[n]);
+              let minAlive = 999;
+              for (let d = 0; d < 12; d++) { sim.tick(120); minAlive = Math.min(minAlive, sim.state.alive); }
+              return { ms: performance.now() - t0, minAlive, tick: sim.state.tick };
+            }""")
+            return (r["ms"] < 15000 and r["minAlive"] >= 395 and r["tick"] == 1440), f"{r['ms'] / 1000:.2f} s for 1 simulated year with 400 villagers and all three packs (fewest alive {r['minAlive']})"
+        check("28 speed: one year with 400 villagers and all packs under 15 seconds", t28)
+
         errors.extend(ui_errors)
+        errors.extend(new_errors)
         check("1b no console or page errors across the whole run", lambda: (not errors, f"{errors[:3]}"))
 
         # screenshot
         SHOTS.mkdir(exist_ok=True)
-        shot = new_page(browser, [], "?seed=7")
+        shot = new_page(browser, [], "?seed=7&mode=free")
         shot.evaluate("""() => {
           const g = LTB.game.sim;
           for (const n of ['unlock fire', 'introduce crime', 'make a government']) g.applyPack(LTB.PACKS[n]);

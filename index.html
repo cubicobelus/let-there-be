@@ -36,7 +36,21 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
 #cmdbar{display:flex;gap:6px;padding:8px;background:#1b232d;border-top:1px solid #2c3846}
 #cmd{flex:1;min-width:0;padding:8px 10px;font:inherit;background:#0f151c;color:#fff;border:1px solid #435468;border-radius:4px}
 #ask{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:10;padding:8px}
-#ask[hidden],#vpanel[hidden],#toast[hidden]{display:none}
+#ask[hidden],#vpanel[hidden],#toast[hidden],#start[hidden],#end[hidden],#runbar[hidden]{display:none}
+#runbar{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center}
+#runbar .goal{color:#ffd98a}
+#start,#end{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:12;padding:8px;background:rgba(0,0,0,.45)}
+#startbox,#endbox{background:#1b232d;border:1px solid #b98a2c;border-radius:8px;padding:16px 18px;width:min(640px,100%);max-height:100%;overflow:auto}
+#startbox h1,#endbox h1{margin:0 0 4px;color:#ffd98a;font-size:26px}
+#startbox p,#endbox p{margin:4px 0}
+#scen{display:flex;flex-direction:column;gap:8px;margin:10px 0}
+#scen button{text-align:left;padding:8px 10px;line-height:1.35}
+#scen button b{color:#ffd98a;font-size:16px}
+#scen button span{display:block}
+#endbox ul{list-style:none;margin:8px 0;padding:0}
+#endbox li{display:flex;justify-content:space-between;gap:12px;padding:2px 0;border-bottom:1px solid #2c3846}
+#endbox li.total{font-weight:700;color:#ffd98a;border-bottom:0}
+#endbox .funny{font-style:italic;color:#ffd98a}
 #askbox{background:#1b232d;border:1px solid #435468;border-radius:8px;padding:12px;width:min(720px,100%);max-height:100%;overflow:auto}
 #askbox h2{margin:0 0 6px;color:#ffd98a}
 #askbox p{margin:4px 0}
@@ -56,6 +70,7 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
   <span class="title">Let there be</span>
   <span id="date">Year 1, Day 1</span>
   <span id="pop">Villagers: 50</span>
+  <span id="runbar" hidden><span class="goal" id="goal"></span><span id="cmds"></span><span id="prog"></span></span>
   <span id="speeds">
    <button data-speed="0">Pause</button><button data-speed="1" class="on">1x</button><button data-speed="4">4x</button><button data-speed="16">16x</button>
   </span>
@@ -74,9 +89,25 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
   </aside>
  </main>
  <form id="cmdbar" autocomplete="off">
-  <input id="cmd" type="text" placeholder="Speak, god..." aria-label="Command">
+  <input id="cmd" type="text" placeholder="Say the word..." aria-label="Command">
   <button type="submit" id="go">Speak</button>
  </form>
+ <div id="start" hidden>
+  <div id="startbox">
+   <h1>Let there be</h1>
+   <p>Type a command. An AI turns it into new rules for a small island of villagers. Pick a game.</p>
+   <div id="scen"></div>
+  </div>
+ </div>
+ <div id="end" hidden>
+  <div id="endbox">
+   <h1 id="end-title"></h1>
+   <p class="funny" id="end-funny"></p>
+   <p id="end-reason"></p>
+   <ul id="end-score"></ul>
+   <div class="row"><button type="button" id="again">Play again</button></div>
+  </div>
+ </div>
  <div id="ask" hidden>
   <div id="askbox">
    <h2>Ask the AI</h2>
@@ -101,7 +132,7 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
     "items": [{"id": "food", "label": "Food"}],
     "objects": [
       {"id": "bush", "label": "Berry bush", "color": "#3f8f4a", "place": {"count": 80, "near": "anywhere"},
-       "stock": {"item": "food", "amount": 3, "max": 4, "regrowPerDay": 1}, "respawn": {"perDay": 1, "max": 80}},
+       "stock": {"item": "food", "amount": 3, "max": 4, "regrowPerDay": 0.75}, "respawn": {"perDay": 1, "max": 80}},
       {"id": "tree", "label": "Tree", "color": "#1f5c33", "place": {"count": 120, "near": "anywhere"},
        "respawn": {"perDay": 1, "max": 120}}
     ],
@@ -123,6 +154,9 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
       {"id": "chat", "label": "Chatting", "when": [{"chance": 0.08}], "priority": 15,
        "target": {"kind": "villager", "pick": "nearest", "maxRange": 8}, "duration": 12, "cooldownDays": 0.5,
        "do": [{"feeling": 3, "towards": "both"}]},
+      {"id": "have_child", "label": "Starting a family", "when": [{"need": "hunger", "op": "<", "value": 45}, {"item": "food", "op": ">=", "value": 1}, {"chance": 0.1}], "priority": 22,
+       "target": {"kind": "villager", "filter": [{"feeling": true, "op": ">=", "value": 5}], "pick": "nearest", "maxRange": 8}, "duration": 15, "cooldownDays": 18,
+       "do": [{"item": "food", "by": -1}, {"birth": 1}, {"feeling": 4, "towards": "both"}]},
       {"id": "vibe", "label": "Vibing", "priority": 1, "target": {"kind": "wander"}, "duration": 10, "do": []}
     ]
   },
@@ -198,9 +232,9 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
 <script type="text/plain" id="ai-instructions">
 # AI instructions
 
-You are the world engine of a funny, chaotic god game. A god types a command and you change a small island of villagers by replying with one JSON object called a pack. Reply with only that JSON.
+You are the world engine of a funny, chaotic island game. The player types a command and you change a small island of villagers by replying with one JSON object called a pack. Reply with only that JSON.
 
-Take the command literally. A clear command gets what the god meant. A vague one gets a funny, literal reading. Every pack must include a real drawback connected to the gift and proportionate to it. Keep narration to one or two funny sentences.
+Take the command literally. A clear command gets what the player meant. A vague one gets a funny, literal reading. Every pack must include a real drawback connected to the gift and proportionate to it. Keep narration to one or two funny sentences.
 
 ## Time
 120 ticks make a day and 12 days make a year. The last third of each day is night. Villagers pick a new behaviour about every 10 ticks.
@@ -212,6 +246,7 @@ All are optional except `id`, `title`, `narration` and `drawback`.
 - `needs`: `{id, label, start, perDay, damageAt, damagePerDay}`. Values run 0 to 100 and rise by `perDay`. At or above `damageAt`, health falls by `damagePerDay`.
 - `items`: `{id, label}`.
 - `gifts`: `{item, amount, share}` hands that many of an item to villagers now. `share` is the fraction who get it, and defaults to everyone. The item must exist in the world or in `items`.
+- `newcomers`: `{count}` puts that many new villagers on the island now, with no extra food.
 - `traits`: `{id, label, share}`. `share` is the fraction of villagers who get it now.
 - `roles`: `{id, label, count, pick, reelectBelow}`. `pick` is `popular` or `random`. If average feeling towards a holder falls below `reelectBelow` (-100 to 100), or the holder dies, the role passes on and a `revolt` event fires.
 - `objects`: `{id, label, sprite, color, place, stock, aura, hurts, spread, lifetimeDays, respawn}`.
@@ -265,6 +300,7 @@ Each may also be used in `filter`, where it is checked on the target.
 - `{event: eventType, radius}` records the event. The target and everyone within `radius` remember it, with the actor as the one who did it.
 - `{spawn: objectId, at}` places an object. `at` is `self` (the default) or `target`. `{remove: "target"}` removes the target object.
 - `{world: variable, by}` changes a number stored on the world.
+- `{birth: 1}` adds that many new villagers next to the actor. The island holds at most 400 villagers.
 - `{addTrait: id, on}`, `{removeTrait: id, on}`
 - `{log: "text"}` adds a line to the world log. `{actor}` and `{target}` become names.
 
@@ -274,6 +310,7 @@ A pack outside these limits is rejected, and the world does not change.
 - Text: title up to 80 characters, narration 500, labels 60, drawback text 300, log lines 200.
 - Needs: `start` and `damageAt` 0 to 100, `perDay` -200 to 200, `damagePerDay` 0 to 200.
 - Traits and gifts: `share` 0 to 1. Gifts: `amount` a whole number from 1 to 100.
+- `newcomers.count` a whole number from 1 to 400. `birth` a whole number from 1 to 5.
 - Roles: `count` a whole number from 0 to 20, `reelectBelow` -100 to 100.
 - Objects: `place.count` a whole number from 0 to 200, `stock` values 0 to 1000, `lifetimeDays` 0.05 to 1000, `respawn.perDay` 0 to 200, `respawn.max` a whole number from 0 to 300.
 - Aura and hurts: `radius` 0 to 30. Aura `perDay` -200 to 200, hurts `perDay` 0 to 500.
@@ -373,7 +410,7 @@ function validatePack(pack, ws) {
     return v;
   };
 
-  keysOk(pack, ['id', 'title', 'narration', 'needs', 'items', 'gifts', 'traits', 'roles', 'objects', 'behaviors', 'drawback'], 'Pack');
+  keysOk(pack, ['id', 'title', 'narration', 'needs', 'items', 'gifts', 'newcomers', 'traits', 'roles', 'objects', 'behaviors', 'drawback'], 'Pack');
   req(pack, ['id', 'title', 'narration'], 'Pack');
 
   var needsL = list(pack.needs, 6, 'needs', 'needs');
@@ -448,6 +485,14 @@ function validatePack(pack, ws) {
     if (hasOwn(n, 'amount')) num(n.amount, 1, 100, p + '.amount', true);
     if (hasOwn(n, 'share')) num(n.share, 0, 1, p + '.share');
   });
+  if (hasOwn(pack, 'newcomers')) {
+    var nc = pack.newcomers;
+    if (!isObj(nc)) err('newcomers must be an object like {"count": 10}.');
+    else {
+      keysOk(nc, ['count'], 'newcomers'); req(nc, ['count'], 'newcomers');
+      if (hasOwn(nc, 'count')) num(nc.count, 1, 400, 'newcomers.count', true);
+    }
+  }
   traitsL.forEach(function (n, i) {
     var p = 'traits[' + i + ']';
     if (!isObj(n)) return;
@@ -682,6 +727,8 @@ function validatePack(pack, ws) {
       } else if (has('world')) {
         keysOk(e, ['world', 'by'], p); req(e, ['by'], p);
         evId(e.world, p + '.world'); num(e.by, -1000000, 1000000, p + '.by');
+      } else if (has('birth')) {
+        keysOk(e, ['birth'], p); num(e.birth, 1, 5, p + '.birth', true);
       } else if (has('addTrait')) {
         keysOk(e, ['addTrait', 'on'], p); ref(e.addTrait, hasTrait, 'trait', p + '.addTrait'); onCheck();
       } else if (has('removeTrait')) {
@@ -794,9 +841,58 @@ function normSeed(s) {
   return 12345;
 }
 
+// ---------- scenarios (data only; the sim reads these and nothing is tied to an id) ----------
+var MAX_VILLAGERS = 400;
+var SCORE = { win: 500, perCommand: 150, perYear: 40, perVillager: 2 };
+var MAX_WORDS = 25;
+var SCENARIOS = {
+  crowded: {
+    id: 'crowded', title: 'Standing room only',
+    goal: 'Reach 120 villagers and keep at least 120 alive for a whole year.',
+    short: 'Reach 120 villagers and hold them for a year',
+    commandLimit: 8, deadlineYears: 12,
+    win: { holdPopulation: 120, holdDays: 12 },
+    lose: {},
+    pressure: [],
+    reasons: {
+      won: 'At least 120 villagers stayed alive for a whole year.',
+      deadline: 'The 12 years ran out before 120 villagers lasted a whole year together.',
+      population: 'Nobody was left on the island.'
+    }
+  },
+  hold_on: {
+    id: 'hold_on', title: 'Bad years',
+    goal: 'Keep at least 30 villagers alive for 12 years while the blights keep coming.',
+    short: 'Keep 30 villagers alive for 12 years',
+    commandLimit: 6, deadlineYears: 12,
+    win: { atDeadline: true },
+    lose: { populationBelow: 30 },
+    pressure: [{
+      kind: 'blight', firstYear: 3, everyYears: 2, fraction: 0.5, fractionStep: 0.05,
+      lines: [
+        'A blight rolls over the island. The berries take it personally.',
+        'Another blight. The villagers suspect the plants are doing it on purpose.',
+        'The blight is back, with friends. The harvest is mostly rumours now.',
+        'A blight again. Somebody suggests eating the blight. This is not recommended.',
+        'Blight number five. The villagers have started naming them.'
+      ]
+    }],
+    reasons: {
+      won: 'At least 30 villagers were still alive at the end of year 12.',
+      deadline: 'The 12 years ran out.',
+      population: 'The island fell below 30 villagers.'
+    }
+  }
+};
+
 // ---------- the sim ----------
 function createSim(opts) {
   opts = opts || {};
+  var scen = null;
+  if (opts.scenario && opts.scenario !== 'free') {
+    if (!hasOwn(SCENARIOS, opts.scenario)) throw new Error('Unknown scenario: ' + opts.scenario);
+    scen = SCENARIOS[opts.scenario];
+  }
   var seed = normSeed(opts.seed);
   var rs = seed;
   function rng() {
@@ -812,9 +908,14 @@ function createSim(opts) {
   var world = newWorld();
   var state = {
     tick: 0, seed: seed, W: W, H: H, tiles: null, villagers: [], objects: [],
-    log: [], logN: 0, vars: dict(), nextObjId: 1,
-    stats: { behaviors: dict(), events: dict(), deaths: 0, burned: 0 }
+    log: [], logN: 0, vars: dict(), nextObjId: 1, alive: 0,
+    stats: { behaviors: dict(), events: dict(), deaths: 0, burned: 0, births: 0 },
+    run: {
+      scenario: scen ? scen.id : null, status: 'playing', commandsUsed: 0, commandLimit: scen ? scen.commandLimit : null,
+      heldDays: 0, reason: '', score: 0, breakdown: [], cause: ''
+    }
   };
+  var usedNames = new Set();
   var objMap = new Map();
   var occ = new Uint8Array(W * H);
   var respAcc = dict();
@@ -893,20 +994,37 @@ function createSim(opts) {
   }
 
   // ----- villagers -----
+  function addVillager(x, y) {
+    var i = state.villagers.length, name, tries = 0;
+    do { name = rpick(NAME_A) + rpick(NAME_B); tries++; } while (usedNames.has(name) && tries < 200);
+    if (usedNames.has(name)) name = name + i;
+    usedNames.add(name);
+    var v = {
+      id: i, name: name, x: x, y: y,
+      alive: true, health: 100, needs: dict(), items: dict(), traits: dict(), roles: [], feel: dict(),
+      memories: [], cd: dict(), last: dict(), cur: null
+    };
+    world.needList.forEach(function (n) { v.needs[n.id] = n.start; });
+    state.villagers.push(v);
+    state.alive++;
+    return v;
+  }
   function makeVillagers() {
-    var used = new Set();
     for (var i = 0; i < 50; i++) {
-      var name, tries = 0;
-      do { name = rpick(NAME_A) + rpick(NAME_B); tries++; } while (used.has(name) && tries < 200);
-      if (used.has(name)) name = name + i;
-      used.add(name);
       var tile = rpick(lists.grass);
-      state.villagers.push({
-        id: i, name: name, x: (tile % W) + 0.2 + rng() * 0.6, y: ((tile / W) | 0) + 0.2 + rng() * 0.6,
-        alive: true, health: 100, needs: dict(), items: dict(), traits: dict(), roles: [], feel: dict(),
-        memories: [], cd: dict(), last: dict(), cur: null
-      });
+      addVillager((tile % W) + 0.2 + rng() * 0.6, ((tile / W) | 0) + 0.2 + rng() * 0.6);
     }
+  }
+  // a new villager on land within r of a point; null when the island is full
+  function spawnVillager(cx, cy, r) {
+    if (state.alive >= MAX_VILLAGERS) return null;
+    var x = cx, y = cy, ok = land(cx, cy);
+    for (var k = 0; k < 12; k++) {
+      var a = rng() * 6.283, d = 0.3 + rng() * r, px = cx + Math.cos(a) * d, py = cy + Math.sin(a) * d;
+      if (land(px, py)) { x = px; y = py; ok = true; break; }
+    }
+    if (!ok) { var tile = rpick(lists.grass); x = (tile % W) + 0.5; y = ((tile / W) | 0) + 0.5; }
+    return addVillager(x, y);
   }
 
   // ----- objects -----
@@ -1102,7 +1220,7 @@ function createSim(opts) {
   // ----- effects -----
   function die(v) {
     if (!v.alive) return;
-    v.alive = false; v.cur = null; state.stats.deaths++;
+    v.alive = false; v.cur = null; state.stats.deaths++; state.alive--;
     addLog(v.name + ' has died.', 'death');
   }
   function setHealth(v, h) {
@@ -1183,6 +1301,8 @@ function createSim(opts) {
         if (to) removeObject(to);
       } else if (hasOwn(e, 'world')) {
         state.vars[e.world] = (state.vars[e.world] || 0) + e.by;
+      } else if (hasOwn(e, 'birth')) {
+        for (var bi = 0; bi < e.birth; bi++) if (spawnVillager(a.x, a.y, 1.5)) state.stats.births++;
       } else if (hasOwn(e, 'addTrait')) {
         if (who && who.alive) who.traits[e.addTrait] = true;
       } else if (hasOwn(e, 'removeTrait')) {
@@ -1287,6 +1407,50 @@ function createSim(opts) {
     });
   }
 
+  // ----- scenario run: goals, pressure, score (checked once per simulated day) -----
+  function finishRun(status, cause) {
+    var run = state.run, bd = [];
+    run.status = status; run.cause = cause; run.reason = scen.reasons[cause];
+    if (status === 'won') {
+      var left = Math.max(0, scen.commandLimit - run.commandsUsed);
+      var yearTicks = DPY * TPD, yrs = Math.max(0, Math.floor((scen.deadlineYears * yearTicks - state.tick) / yearTicks));
+      bd.push({ label: 'Victory', points: SCORE.win });
+      bd.push({ label: 'Unused commands (' + left + ' x ' + SCORE.perCommand + ')', points: left * SCORE.perCommand });
+      bd.push({ label: 'Unused years (' + yrs + ' x ' + SCORE.perYear + ')', points: yrs * SCORE.perYear });
+      bd.push({ label: 'Villagers alive (' + state.alive + ' x ' + SCORE.perVillager + ')', points: state.alive * SCORE.perVillager });
+      run.score = bd.reduce(function (s, b) { return s + b.points; }, 0);
+    } else {
+      bd.push({ label: 'Defeat', points: 0 });
+      run.score = 0;
+    }
+    run.breakdown = bd;
+    addLog((status === 'won' ? 'The run is won. ' : 'The run is lost. ') + run.reason, 'system');
+  }
+  function pressure(p, day) {
+    if (p.kind !== 'blight') return;
+    var year = Math.floor(day / DPY) + 1;
+    if (day % DPY !== 0 || year < p.firstYear || (year - p.firstYear) % p.everyYears !== 0) return;
+    var idx = (year - p.firstYear) / p.everyYears, frac = Math.min(0.95, p.fraction + p.fractionStep * idx);
+    state.objects.forEach(function (o) {
+      if (o.dead) return;
+      var d = world.objects[o.def];
+      if (d.stock && d.stock.regrowPerDay > 0 && rng() < frac) removeObject(o);
+    });
+    state.stats.events.blight = (state.stats.events.blight || 0) + 1;
+    addLog(p.lines[idx % p.lines.length], 'system');
+  }
+  function runDay() {
+    var run = state.run;
+    if (!scen || run.status !== 'playing') return;
+    var day = state.tick / TPD;
+    scen.pressure.forEach(function (p) { pressure(p, day); });
+    var alive = state.alive;
+    if (scen.win.holdPopulation) run.heldDays = alive >= scen.win.holdPopulation ? run.heldDays + 1 : 0;
+    if (alive === 0 || (scen.lose.populationBelow && alive < scen.lose.populationBelow)) { finishRun('lost', 'population'); return; }
+    if ((scen.win.holdPopulation && run.heldDays >= scen.win.holdDays) || (scen.win.atDeadline && day >= scen.deadlineYears * DPY)) { finishRun('won', 'won'); return; }
+    if (day >= scen.deadlineYears * DPY) finishRun('lost', 'deadline');
+  }
+
   // ----- tick -----
   function step() {
     var t = ++state.tick, i, j, k;
@@ -1362,7 +1526,7 @@ function createSim(opts) {
       if (!v.alive) continue;
       act(v);
     }
-    if (t % TPD === 0) dailyRoles();
+    if (t % TPD === 0) { dailyRoles(); runDay(); }
   }
 
   function applyPackInternal(pack) {
@@ -1392,6 +1556,13 @@ function createSim(opts) {
         if (h) h.roles.push(r.id);
       }
     });
+    if (p.newcomers) {
+      var host = vs.filter(function (v) { return v.alive; });
+      for (i = 0; i < p.newcomers.count; i++) {
+        var hv = host.length ? rpick(host) : null;
+        if (!spawnVillager(hv ? hv.x : 0, hv ? hv.y : 0, 3)) break;
+      }
+    }
     (p.objects || []).forEach(function (o) {
       world.objects[o.id] = o; world.objList.push(o);
       var cnt = o.place ? o.place.count : 0;
@@ -1469,7 +1640,18 @@ function createSim(opts) {
   var sim = {
     seed: seed, state: state, world: world,
     applyPack: applyPack,
-    tick: function (n) { n = n === undefined ? 1 : n; for (var i = 0; i < n; i++) step(); },
+    tick: function (n) {
+      n = n === undefined ? 1 : n;
+      for (var i = 0; i < n && state.run.status === 'playing'; i++) step();
+    },
+    scenario: scen,
+    useCommand: function () {
+      var r = state.run;
+      if (r.status !== 'playing') return false;
+      if (r.commandLimit !== null && r.commandsUsed >= r.commandLimit) return false;
+      r.commandsUsed++;
+      return true;
+    },
     summary: summary, hash: hash
   };
 
@@ -1484,19 +1666,23 @@ function createSim(opts) {
 // ===================================================================
 PACKS = JSON.parse(document.getElementById('packs-data').textContent);
 AI_INSTRUCTIONS = document.getElementById('ai-instructions').textContent.replace(/^\n+|\n+$/g, '');
-var LTB = window.LTB = { createSim: createSim, validatePack: validatePack, PACKS: PACKS, AI_INSTRUCTIONS: AI_INSTRUCTIONS };
+var LTB = window.LTB = { createSim: createSim, validatePack: validatePack, PACKS: PACKS, AI_INSTRUCTIONS: AI_INSTRUCTIONS,
+  SCENARIOS: SCENARIOS, MAX_VILLAGERS: MAX_VILLAGERS, MAX_WORDS: MAX_WORDS };
 
 // ===================================================================
 // UI (rendering and controls; reads the sim, never writes pack text as HTML)
 // ===================================================================
 var $ = function (id) { return document.getElementById(id); };
 var params = new URLSearchParams(location.search);
-var seedParam = params.get('seed');
-var sim = createSim({ seed: seedParam !== null ? Number(seedParam) : ((Math.random() * 4294967296) >>> 0) });
+var seedParam = params.get('seed'), modeParam = params.get('mode');
+var newSeed = function () { return seedParam !== null ? Number(seedParam) : ((Math.random() * 4294967296) >>> 0); };
+var MODES = ['free'].concat(Object.keys(SCENARIOS));
+var startMode = modeParam !== null && MODES.indexOf(modeParam) >= 0 ? modeParam : null;
+var sim = createSim({ seed: newSeed(), scenario: startMode });
 LTB.game = { get sim() { return sim; }, submit: function (t) { submit(t); }, refresh: function () { syncLog(); syncPacks(); } };
 
 var cv = $('cv'), ctx = cv.getContext('2d');
-var speed = 1, acc = 0, lastTs = 0, lastLogN = 0, selected = null, toastTimer = 0;
+var speed = 1, acc = 0, lastTs = 0, lastLogN = 0, selected = null, toastTimer = 0, packsShown = -1;
 var tileCanvas = null, spriteCache = {};
 
 // ask-the-AI hook: one small function a real provider could replace.
@@ -1604,7 +1790,8 @@ function toast(text) {
 function syncPacks() {
   var ul = $('packs');
   var shown = sim.world.packs.filter(function (p) { return p.drawback; });
-  if (ul.children.length === shown.length) return;
+  if (packsShown === shown.length) return;
+  packsShown = shown.length;
   ul.textContent = '';
   shown.forEach(function (p) {
     var li = document.createElement('li'), b = document.createElement('b');
@@ -1613,17 +1800,28 @@ function syncPacks() {
     li.appendChild(document.createTextNode(' - ' + p.drawback.label + ': ' + p.drawback.text));
     ul.appendChild(li);
   });
-  if (!shown.length) addLi(ul, '', 'Nothing yet. Say something, god.', false);
+  if (!shown.length) addLi(ul, '', 'Nothing yet. Say something.', false);
 }
 var lastHud = '';
+function progressText(sc, run, alive, dn) {
+  var parts = [];
+  if (sc.win.holdPopulation) parts.push('Population ' + alive + '/' + sc.win.holdPopulation + ', held ' + run.heldDays + '/' + sc.win.holdDays + ' days');
+  if (sc.lose.populationBelow) {
+    var left = Math.max(0, Math.ceil((sc.deadlineYears * DPY - dn) / DPY));
+    parts.push('Years left: ' + left + ', floor ' + sc.lose.populationBelow + ' villagers');
+  }
+  return parts.join('. ');
+}
 function hud() {
-  var st = sim.state, dn = Math.floor(st.tick / TPD);
-  var alive = st.villagers.filter(function (v) { return v.alive; }).length;
-  var s = 'Year ' + (Math.floor(dn / DPY) + 1) + ', Day ' + (dn % DPY + 1) + '|Villagers: ' + alive;
+  var st = sim.state, dn = Math.floor(st.tick / TPD), run = st.run, sc = sim.scenario;
+  var s = 'Year ' + (Math.floor(dn / DPY) + 1) + ', Day ' + (dn % DPY + 1) + '|Villagers: ' + st.alive;
+  if (sc) s += '|' + sc.short + '|Commands: ' + run.commandsUsed + '/' + run.commandLimit + '|' + progressText(sc, run, st.alive, dn);
   if (s === lastHud) return;
   lastHud = s;
   var p = s.split('|');
   $('date').textContent = p[0]; $('pop').textContent = p[1];
+  $('runbar').hidden = !sc;
+  if (sc) { $('goal').textContent = p[2]; $('cmds').textContent = p[3]; $('prog').textContent = p[4]; }
 }
 function vpanel() {
   var el = $('vpanel');
@@ -1651,7 +1849,8 @@ function vpanel() {
 function frame(ts) {
   var dt = lastTs ? (ts - lastTs) / 1000 : 0;
   lastTs = ts;
-  if (speed > 0 && $('ask').hidden) {
+  if (sim.state.run.status !== 'playing' && $('end').hidden) showEnd();
+  if (speed > 0 && !paused()) {
     acc += Math.min(dt, 0.25) * 10 * speed;
     var n = Math.floor(acc);
     acc -= n;
@@ -1661,9 +1860,72 @@ function frame(ts) {
   requestAnimationFrame(frame);
 }
 
+// ----- start and end panels -----
+var END_LINES = {
+  won: 'The villagers are very pleased with you, and a few of them have noticed.',
+  deadline: 'Time ran out. The villagers have called a meeting about it, which will take longer.',
+  population: 'The island is quieter than planned, mostly because of the missing villagers.'
+};
+function paused() {
+  return !$('ask').hidden || !$('start').hidden || !$('end').hidden || sim.state.run.status !== 'playing';
+}
+function resetView() {
+  lastLogN = 0; lastHud = ''; selected = null; packsShown = -1; spriteCache = {}; acc = 0;
+  $('log').textContent = ''; $('toast').hidden = true; $('ask').hidden = true; $('end').hidden = true;
+  buildTileCanvas();
+  syncLog(); syncPacks(); hud();
+}
+function showStart() {
+  $('end').hidden = true;
+  sim = createSim({ seed: newSeed(), scenario: null });
+  resetView();
+  $('start').hidden = false;
+}
+function begin(mode) {
+  sim = createSim({ seed: newSeed(), scenario: mode });
+  resetView();
+  $('start').hidden = true;
+  speed = 1;
+  Array.prototype.forEach.call(document.querySelectorAll('#speeds button'), function (x) { x.classList.toggle('on', x.getAttribute('data-speed') === '1'); });
+}
+function buildStart() {
+  var box = $('scen');
+  box.textContent = '';
+  var add = function (mode, title, lines) {
+    var b = document.createElement('button'), t = document.createElement('b');
+    b.type = 'button'; b.setAttribute('data-mode', mode);
+    t.textContent = title; b.appendChild(t);
+    lines.forEach(function (l) { var s = document.createElement('span'); s.textContent = l; b.appendChild(s); });
+    b.addEventListener('click', function () { begin(mode === 'free' ? null : mode); });
+    box.appendChild(b);
+  };
+  Object.keys(SCENARIOS).forEach(function (k) {
+    var sc = SCENARIOS[k];
+    add(k, sc.title, [sc.goal, 'Commands: ' + sc.commandLimit + '. Deadline: ' + sc.deadlineYears + ' years.']);
+  });
+  add('free', 'Free play', ['No goal, no limits. Just see what happens.']);
+}
+function showEnd() {
+  var run = sim.state.run, won = run.status === 'won';
+  $('end-title').textContent = won ? 'You won' : 'You lost';
+  $('end-funny').textContent = END_LINES[won ? 'won' : run.cause];
+  $('end-reason').textContent = run.reason;
+  var ul = $('end-score');
+  ul.textContent = '';
+  run.breakdown.forEach(function (b) {
+    var li = document.createElement('li'), a = document.createElement('span'), c = document.createElement('span');
+    a.textContent = b.label; c.textContent = String(b.points);
+    li.appendChild(a); li.appendChild(c); ul.appendChild(li);
+  });
+  var tot = document.createElement('li'), ta = document.createElement('span'), tb = document.createElement('span');
+  tot.className = 'total'; ta.textContent = 'Score'; tb.textContent = String(run.score);
+  tot.appendChild(ta); tot.appendChild(tb); ul.appendChild(tot);
+  $('end').hidden = false;
+}
+
 // ----- commands -----
 function showAsk(command) {
-  var prompt = AI_INSTRUCTIONS + '\n\n# Current world\n' + sim.summary() + '\n\n# The god\'s command\n' + command;
+  var prompt = AI_INSTRUCTIONS + '\n\n# Current world\n' + sim.summary() + '\n\n# The command\n' + command;
   var pending = askTheAI(prompt, command);
   if (pending && typeof pending.then === 'function') {
     pending.then(function (txt) { applyAnswer(txt, true); });
@@ -1697,12 +1959,24 @@ function applyAnswer(text) {
   if (p.error) { showErrors([p.error]); return; }
   var res = sim.applyPack(p.value);
   if (!res.ok) { showErrors(res.errors); return; }
+  sim.useCommand();
   $('ask').hidden = true;
   syncLog(); syncPacks();
 }
+function refuse(text) { say(text, 'refusal'); toast(text); }
 function submit(text) {
   var norm = String(text).trim().toLowerCase();
   if (!norm) return;
+  var run = sim.state.run;
+  if (run.status !== 'playing') { refuse('The run is over. Press Play again to start another.'); return; }
+  if (run.commandLimit !== null && run.commandsUsed >= run.commandLimit) {
+    refuse('You have used all ' + run.commandLimit + ' commands. Sit back and watch what you did.');
+    return;
+  }
+  if (norm.split(/\s+/).length > MAX_WORDS) {
+    refuse('That is a speech, not a command. Keep it to ' + MAX_WORDS + ' words or fewer.');
+    return;
+  }
   if (hasOwn(PACKS, norm) && norm !== 'base') {
     var pack = PACKS[norm];
     if (sim.world.packs.some(function (p) { return p.id === pack.id; })) {
@@ -1712,6 +1986,7 @@ function submit(text) {
     }
     var res = sim.applyPack(pack);
     if (!res.ok) { say('The island refused: ' + res.errors.join(' '), 'refusal'); return; }
+    sim.useCommand();
     syncLog(); syncPacks();
     return;
   }
@@ -1727,6 +2002,7 @@ $('cmdbar').addEventListener('submit', function (e) {
 });
 $('apply').addEventListener('click', function () { applyAnswer($('paste').value); });
 $('cancel').addEventListener('click', function () { $('ask').hidden = true; });
+$('again').addEventListener('click', showStart);
 $('copy').addEventListener('click', function () {
   var ta = $('prompt'), done = function () { $('copy').textContent = 'Copied'; };
   if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(done, function () { ta.select(); document.execCommand('copy'); done(); });
@@ -1751,8 +2027,11 @@ cv.addEventListener('click', function (e) {
 });
 window.addEventListener('resize', resize);
 
+buildStart();
 buildTileCanvas();
 resize();
+if (startMode === null) $('start').hidden = false;
+syncLog(); syncPacks(); hud();
 requestAnimationFrame(frame);
 })();
 </script>
