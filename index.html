@@ -59,6 +59,7 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
 #askbox textarea{width:100%;height:130px;margin:4px 0;background:#0f151c;color:#e8e4d8;border:1px solid #435468;border-radius:4px;font:12px/1.3 Consolas,monospace;padding:6px}
 #askbox .row{display:flex;gap:6px;margin:4px 0}
 #errors{margin:6px 0;padding-left:18px;color:#f0a0a0}
+#checking{margin:6px 0;color:#cfd8a0}
 #suggest{margin:0 0 8px;padding:6px 8px;background:#1f2935;border-radius:4px}
 #suggest[hidden],#ideaspanel[hidden]{display:none}
 #suggest p{margin:0 0 6px}
@@ -133,6 +134,7 @@ button.on{background:#b98a2c;border-color:#e0b04f;color:#1a1306}
    <textarea id="prompt" readonly></textarea>
    <div class="row"><button type="button" id="copy">Copy</button></div>
    <textarea id="paste" placeholder="Paste the JSON answer here"></textarea>
+   <p id="checking" hidden>Checking how that plays out...</p>
    <ul id="errors"></ul>
    <div class="row"><button type="button" id="apply">Apply</button><button type="button" id="cancel">Cancel</button></div>
   </div>
@@ -2328,6 +2330,22 @@ var dict = function () { return Object.create(null); };
 var hasOwn = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
 var isObj = function (x) { return x !== null && typeof x === 'object' && !Array.isArray(x); };
 var clamp = function (v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; };
+// deep copy of plain data (keeps null-prototype dictionaries and shared references); anything in memo is reused as it is
+function cloneDeep(x, memo) {
+  if (x === null || typeof x !== 'object') return x;
+  if (memo.has(x)) return memo.get(x);
+  var out, i, ks;
+  if (Array.isArray(x)) {
+    out = new Array(x.length); memo.set(x, out);
+    for (i = 0; i < x.length; i++) out[i] = cloneDeep(x[i], memo);
+    return out;
+  }
+  out = Object.getPrototypeOf(x) === null ? Object.create(null) : {};
+  memo.set(x, out);
+  ks = Object.keys(x);
+  for (i = 0; i < ks.length; i++) out[ks[i]] = cloneDeep(x[ks[i]], memo);
+  return out;
+}
 
 var ID_RE = /^[a-z0-9][a-z0-9_]*$/;
 var HEX_RE = /^#[0-9a-fA-F]{6}$/;
@@ -3018,6 +3036,8 @@ function createSim(opts) {
   var occ = new Uint8Array(W * H);
   var respAcc = dict();
   var lists = { grass: [], sand: [], coast: [], land: [], center: [] };
+  // a fork is a hidden copy used for what-if runs: it never touches the sim it came from
+  var from = opts.from || null, dry = !!from;
 
   function addLog(text, kind) {
     state.logN++;
@@ -3743,7 +3763,14 @@ function createSim(opts) {
     applyPack: applyPack,
     tick: function (n) {
       n = n === undefined ? 1 : n;
-      for (var i = 0; i < n && state.run.status === 'playing'; i++) step();
+      // a fork keeps going when its goal is reached or lost, so a what-if run always covers the full time
+      for (var i = 0; i < n && (dry || state.run.status === 'playing'); i++) { step(); if (dry) state.run.status = 'playing'; }
+    },
+    // hidden copy of this sim as it is now, with its own random stream (number k picks which one); reads, never changes, this sim
+    fork: function (k) {
+      var s = (rs + Math.imul((k | 0) + 1, 0x9E3779B9)) >>> 0;
+      return createSim({ scenario: scen ? scen.id : null, seed: s,
+        from: { state: state, world: world, usedNames: usedNames, occ: occ, respAcc: respAcc, lists: lists } });
     },
     scenario: scen,
     useCommand: function () {
@@ -3756,10 +3783,159 @@ function createSim(opts) {
     summary: summary, hash: hash
   };
 
-  genMap();
-  makeVillagers();
-  applyPackInternal(PACKS.base);
+  if (from) {
+    var memo = new Map();
+    memo.set(from.state.tiles, from.state.tiles); memo.set(from.lists, from.lists);
+    state = cloneDeep(from.state, memo); world = cloneDeep(from.world, memo);
+    respAcc = cloneDeep(from.respAcc, memo); occ = from.occ.slice(); lists = from.lists;
+    usedNames = new Set(from.usedNames);
+    objMap = new Map();
+    state.objects.forEach(function (o) { if (!o.dead) objMap.set(o.id, o); });
+    sim.state = state; sim.world = world;
+  } else {
+    genMap();
+    makeVillagers();
+    applyPackInternal(PACKS.base);
+  }
   return sim;
+}
+
+// ---------- strength check for pasted answers (pure; used in goal runs only) ----------
+// An answer is tried on hidden copies of the island: how many more villagers are alive STRENGTH_DAYS later with it than without,
+// averaged over STRENGTH_SEEDS random streams. The ready-made commands were balanced so none wins a goal alone; an answer
+// may not do better than the best of them (plus some slack).
+var STRENGTH_DAYS = 2 * DPY;      // two years ahead
+var STRENGTH_SEEDS = 3;
+// Measured offline (notes tools/strength_limit.py) over the 25 ready-made commands, each alone, from the start of both goals
+// on two island seeds and from a mid-game state (fire and farming applied, one year in): the best single command gained 27.3
+// extra villagers (invent marriage, crowded start, seed 2). Re-measure whenever the command set or the sim changes.
+var STRENGTH_LIMIT = 27.3;
+var STRENGTH_SLACK = 1.25;        // allowed gain = STRENGTH_LIMIT x STRENGTH_SLACK; raise it to let more through
+var STRENGTH_BLOWOUT = 0.8;       // a first-year lead of this share of the allowed gain, on the first run, already marks an answer as too strong (leads only grow), so the rest is skipped
+var TONE_STEPS = [0.5, 0.25, 0.1];
+var TONE_WORDS = { '0.5': 'half strength', '0.25': 'a quarter of its strength', '0.1': 'a tenth of its strength' };
+
+function aliveAfter(sim, k, pack, days) {
+  var f = sim.fork(k);
+  if (pack && !f.applyPack(pack).ok) return null;
+  f.tick(days * TPD);
+  return f.state.alive;
+}
+function baselineAlive(sim, opts) {
+  opts = opts || {};
+  var out = [], n = opts.seeds || STRENGTH_SEEDS;
+  for (var k = 0; k < n; k++) out.push(aliveAfter(sim, k, null, opts.days || STRENGTH_DAYS));
+  return out;
+}
+// extra villagers alive later because of the pack (mean over the seeds); the real sim is not touched
+function measureGain(sim, pack, opts) {
+  opts = opts || {};
+  var days = opts.days || STRENGTH_DAYS, n = opts.seeds || STRENGTH_SEEDS;
+  var base = opts.baseline || baselineAlive(sim, opts), withA = [], sum = 0;
+  for (var k = 0; k < n; k++) {
+    var a = aliveAfter(sim, k, pack, days);
+    if (a === null) return { gain: NaN, with: withA, without: base };
+    withA.push(a); sum += a - base[k];
+  }
+  return { gain: sum / n, with: withA, without: base };
+}
+// a weaker copy of a pack: only the good parts shrink (conjured goods, stocks, gifts, newcomers, births, healing, relief);
+// harmful effects and the drawback are never touched
+function toneDown(pack, f) {
+  var p = JSON.parse(JSON.stringify(pack));
+  var rd = function (x, dp) { var m = Math.pow(10, dp); return Math.round(x * m) / m; };
+  var whole = function (x) { return Math.max(1, Math.round(x)); };
+  (Array.isArray(p.gifts) ? p.gifts : []).forEach(function (g) {
+    if (!isObj(g) || typeof g.amount !== 'number') return;
+    var eff = g.amount * f;
+    if (eff >= 1) g.amount = Math.round(eff);
+    else { g.amount = 1; g.share = rd((typeof g.share === 'number' ? g.share : 1) * eff, 2); }
+  });
+  if (isObj(p.newcomers) && typeof p.newcomers.count === 'number') p.newcomers.count = whole(p.newcomers.count * f);
+  (Array.isArray(p.objects) ? p.objects : []).forEach(function (o) {
+    if (!isObj(o)) return;
+    if (isObj(o.stock)) {
+      var s = o.stock;
+      if (typeof s.amount === 'number' && s.amount >= 1) s.amount = whole(s.amount * f);
+      if (typeof s.max === 'number' && s.max >= 1) s.max = Math.max(whole(s.max * f), typeof s.amount === 'number' ? s.amount : 0);
+      if (typeof s.regrowPerDay === 'number') s.regrowPerDay = rd(s.regrowPerDay * f, 2);
+      if (isObj(o.place) && typeof o.place.count === 'number' && o.place.count > 0) o.place.count = whole(o.place.count * f);
+      if (isObj(o.respawn) && !isObj(o.hurts) && typeof o.respawn.perDay === 'number') o.respawn.perDay = rd(o.respawn.perDay * f, 2);
+    }
+    if (isObj(o.aura) && typeof o.aura.perDay === 'number' && o.aura.perDay < 0) o.aura.perDay = rd(o.aura.perDay * f, 2);
+  });
+  (Array.isArray(p.behaviors) ? p.behaviors : []).forEach(function (b) {
+    if (!isObj(b) || !Array.isArray(b.do)) return;
+    var births = false, up = false, harm = false;
+    b.do.forEach(function (e) {
+      if (!isObj(e)) return;
+      if (hasOwn(e, 'need')) {
+        if (typeof e.by === 'number' && e.by < 0) { e.by = rd(e.by * f, 2); up = true; }
+        else if (typeof e.by === 'number' && e.by > 0) harm = true;
+      } else if (hasOwn(e, 'item')) {
+        if (typeof e.by === 'number' && e.by > 0) { e.by = rd(e.by * f, 2); up = true; }
+        else if (typeof e.by === 'number' && e.by < 0) harm = true;
+      } else if (hasOwn(e, 'health')) {
+        var hv = typeof e.health === 'number' ? e.health : e.by;
+        if (typeof hv === 'number' && hv > 0) {
+          if (typeof e.health === 'number') e.health = rd(e.health * f, 2); else e.by = rd(e.by * f, 2);
+          up = true;
+        } else if (typeof hv === 'number' && hv < 0) harm = true;
+      } else if (hasOwn(e, 'fromStock') || hasOwn(e, 'toStock')) {
+        if (typeof e.amount === 'number') e.amount = rd(e.amount * f, 2);
+        if (hasOwn(e, 'fromStock')) up = true; else harm = true;
+      } else if (hasOwn(e, 'birth')) births = true;
+    });
+    // a behaviour that only gives (no cost, no harm in it) also happens less often, otherwise doing it
+    // over and over would still add up to a lot; behaviours that carry a harm keep their pace
+    if (births || (up && !harm)) {
+      var ch = Array.isArray(b.when) ? b.when.filter(function (c) { return isObj(c) && hasOwn(c, 'chance'); })[0] : null;
+      if (ch) ch.chance = rd(ch.chance * f, 3);
+      else { if (!Array.isArray(b.when)) b.when = []; b.when.push({ chance: f }); }
+    }
+  });
+  return p;
+}
+// Steps through the whole check, handing control back after each hidden run (so a screen can stay alive).
+// Finishes with { verdict: 'ok' | 'toned' | 'refused', pack, factor, gain, allowed, tries }.
+function* strengthSteps(sim, pack) {
+  var allowed = STRENGTH_LIMIT * STRENGTH_SLACK, tries = [], base = [], k, half = STRENGTH_DAYS / 2;
+  // one hidden run, reporting the villagers alive halfway and at the end (end is null when the run was stopped halfway)
+  var run = function (seedNo, p, stopAt) {
+    var f = sim.fork(seedNo);
+    if (p && !f.applyPack(p).ok) return null;
+    f.tick(half * TPD);
+    var mid = f.state.alive;
+    if (stopAt !== undefined && mid >= stopAt) return { mid: mid, end: null };
+    f.tick((STRENGTH_DAYS - half) * TPD);
+    return { mid: mid, end: f.state.alive };
+  };
+  for (k = 0; k < STRENGTH_SEEDS; k++) { base.push(run(k, null)); yield; }
+  var cands = [{ f: 1, p: pack }];
+  TONE_STEPS.forEach(function (f) { cands.push({ f: f, p: null }); });
+  for (var ci = 0; ci < cands.length; ci++) {
+    var c = cands[ci];
+    if (ci > 0) { c.p = toneDown(pack, c.f); if (!validatePack(c.p, sim).ok) continue; }
+    var sum = 0, bad = false, early = false;
+    for (k = 0; k < STRENGTH_SEEDS; k++) {
+      // already far over the limit after the first year of the first run: no need to play the rest out
+      var a = run(k, c.p, k === 0 ? base[0].mid + STRENGTH_BLOWOUT * allowed : undefined);
+      yield;
+      if (a === null) { bad = true; break; }
+      if (a.end === null) { early = true; sum = (a.mid - base[0].mid) * STRENGTH_SEEDS; break; }
+      sum += a.end - base[k].end;
+    }
+    if (bad) continue;
+    var gain = sum / STRENGTH_SEEDS;
+    tries.push({ factor: c.f, gain: gain, early: early });
+    if (!early && gain <= allowed) return { verdict: c.f === 1 ? 'ok' : 'toned', pack: c.p, factor: c.f, gain: gain, allowed: allowed, tries: tries };
+  }
+  return { verdict: 'refused', pack: null, factor: 0, gain: tries.length ? tries[0].gain : NaN, allowed: allowed, tries: tries };
+}
+function checkStrength(sim, pack) {
+  var g = strengthSteps(sim, pack), r = g.next();
+  while (!r.done) r = g.next();
+  return r.value;
 }
 
 // ===================================================================
@@ -3813,7 +3989,9 @@ function spriteNameFor(d) {
 }
 
 var LTB = window.LTB = { createSim: createSim, validatePack: validatePack, PACKS: PACKS, AI_INSTRUCTIONS: AI_INSTRUCTIONS,
-  SCENARIOS: SCENARIOS, MAX_VILLAGERS: MAX_VILLAGERS, MAX_WORDS: MAX_WORDS, ALIASES: ALIASES, matchCommand: matchCommand, repairPack: repairPack, SPRITES: SPRITES, spriteNameFor: spriteNameFor,
+  SCENARIOS: SCENARIOS, MAX_VILLAGERS: MAX_VILLAGERS, MAX_WORDS: MAX_WORDS, ALIASES: ALIASES, matchCommand: matchCommand, repairPack: repairPack, SPRITES: SPRITES,
+  measureGain: measureGain, baselineAlive: baselineAlive, toneDown: toneDown, checkStrength: checkStrength, strengthSteps: strengthSteps,
+  STRENGTH_LIMIT: STRENGTH_LIMIT, STRENGTH_SLACK: STRENGTH_SLACK, STRENGTH_DAYS: STRENGTH_DAYS, STRENGTH_SEEDS: STRENGTH_SEEDS, TONE_STEPS: TONE_STEPS, spriteNameFor: spriteNameFor,
   library: function () { return Object.keys(PACKS).filter(function (k) { return k !== 'base'; }); } };
 
 // ===================================================================
@@ -4074,9 +4252,10 @@ var END_LINES = {
   population: 'The island is quieter than planned, mostly because of the missing villagers.'
 };
 function paused() {
-  return !$('ask').hidden || !$('start').hidden || !$('end').hidden || sim.state.run.status !== 'playing';
+  return checking !== 0 || !$('ask').hidden || !$('start').hidden || !$('end').hidden || sim.state.run.status !== 'playing';
 }
 function resetView() {
+  endCheck();
   lastLogN = 0; lastHud = ''; selected = null; packsShown = -1; spriteCache = {}; acc = 0; zoom = 1; view.s = fitScale;
   $('log').textContent = ''; $('toast').hidden = true; $('ask').hidden = true; $('end').hidden = true; $('ideaspanel').hidden = true;
   buildTileCanvas(); clampView();
@@ -4194,17 +4373,47 @@ function showErrors(list) {
   ul.textContent = '';
   list.forEach(function (e) { addLi(ul, '', e, false); });
 }
+var checking = 0;   // non-zero while an answer is being tried on hidden copies of the island (the number identifies that check)
+var checkId = 0;
+function finishApply(pack, fixes, note) {
+  var res = sim.applyPack(pack);
+  if (!res.ok) { showErrors(res.errors); return; }
+  if (fixes.length) say('Small fixes to that answer: ' + fixes.join('; ') + '.', 'note');
+  if (note) say(note, 'note');
+  sim.useCommand();
+  $('ask').hidden = true;
+  syncLog(); syncPacks();
+}
+function endCheck() { checking = 0; $('checking').hidden = true; $('apply').disabled = false; }
 function applyAnswer(text) {
+  if (checking) return;
   if (!String(text).trim()) { showErrors(['Paste the answer first.']); return; }
   var p = parseAnswer(text);
   if (p.error) { showErrors([p.error]); return; }
   var fixes = repairPack(p.value, sim);
-  var res = sim.applyPack(p.value);
-  if (!res.ok) { showErrors(res.errors); return; }
-  if (fixes.length) say('Small fixes to that answer: ' + fixes.join('; ') + '.', 'note');
-  sim.useCommand();
-  $('ask').hidden = true;
-  syncLog(); syncPacks();
+  var vr = validatePack(p.value, sim);
+  if (!vr.ok) { showErrors(vr.errors); return; }
+  // free play stays anything goes; in a goal run the answer must not be stronger than the ready-made commands
+  if (!sim.scenario || sim.state.run.status !== 'playing') { finishApply(p.value, fixes, null); return; }
+  var id = checking = ++checkId, mine = sim, gen = strengthSteps(sim, p.value);
+  showErrors([]);
+  $('checking').hidden = false; $('apply').disabled = true;
+  if ($('ask').hidden) toast('Checking how that plays out...');
+  var next = function () {
+    if (checking !== id || sim !== mine) return;
+    var r = gen.next();
+    if (!r.done) { setTimeout(next, 0); return; }
+    endCheck();
+    var v = r.value;
+    if (v.verdict === 'refused') {
+      var msg = 'The island turned that down: it was too good to be true. Try something with more of a catch.';
+      showErrors([msg]); say(msg, 'refusal'); toast(msg);
+      return;
+    }
+    var note = v.verdict === 'toned' ? 'The island found that a bit much and toned it down (the good parts at ' + TONE_WORDS[String(v.factor)] + ').' : null;
+    finishApply(v.pack, fixes, note);
+  };
+  setTimeout(next, 0);
 }
 function refuse(text) { say(text, 'refusal'); toast(text); }
 // false (with a refusal shown) when no command can be taken right now
@@ -4262,7 +4471,7 @@ $('ideas').addEventListener('click', function () {
   panel.hidden = false;
 });
 $('apply').addEventListener('click', function () { applyAnswer($('paste').value); });
-$('cancel').addEventListener('click', function () { $('ask').hidden = true; });
+$('cancel').addEventListener('click', function () { endCheck(); $('ask').hidden = true; });
 $('again').addEventListener('click', showStart);
 $('copy').addEventListener('click', function () {
   var ta = $('prompt'), done = function () { $('copy').textContent = 'Copied'; };

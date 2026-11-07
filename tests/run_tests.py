@@ -710,6 +710,7 @@ def main():
             if answer is not None:
                 pg.fill("#paste", answer)
                 pg.click("#apply")
+                pg.wait_for_function("document.getElementById('checking').hidden")
                 pg.wait_for_timeout(60)
 
         lim = new_page(browser, new_errors, "?seed=1&mode=hold_on")
@@ -1263,6 +1264,172 @@ def main():
                   and z2 > 1.5 and 1 < z1 < z2 and sel is not None and sel[0] is not None and sel[0].startswith(sel[1]) and ox1 > ox0)
             return ok, f"scale {s0:.1f}->{s1:.1f}, point under cursor kept {inside}, zoom max {zmax:.2f} min {zmin:.2f}, buttons {z2:.2f}/{z1:.2f}, selected {sel}, pan {ox0:.0f}->{ox1:.0f}"
         check("42 zoom: wheel and buttons change the scale within limits, dragging pans, clicking still selects the villager", t42)
+
+        # ---------- strength check for pasted answers in a goal run ----------
+        STRENGTH_JS = r"""
+        (() => {
+          const conjure = { id: 'farmx', title: 'Farming', narration: 'Food simply appears.',
+            behaviors: [
+              { id: 'conjure', label: 'Conjuring food', priority: 30, target: { kind: 'self' }, duration: 2, do: [{ item: 'food', by: 3 }, { need: 'hunger', by: -10 }] },
+              { id: 'tire', label: 'Tired from all that', priority: 10, target: { kind: 'self' }, duration: 2, do: [{ need: 'tiredness', by: 5 }] }],
+            drawback: { label: 'Tired', text: 'Conjuring is tiring.', rules: ['tire'] } };
+          // same gift, but the giving behaviour also carries a small harm, so it cannot be thinned out and stays too strong
+          const stuck = JSON.parse(JSON.stringify(conjure));
+          stuck.id = 'farmy'; stuck.behaviors[0].id = 'conjure2'; stuck.behaviors[1].id = 'tire2';
+          stuck.behaviors[0].do.push({ health: -0.01 }); stuck.drawback.rules = ['tire2'];
+          const mild = JSON.parse(JSON.stringify(LTB.PACKS['make it rain frogs']));
+          window.__str = { conjure, stuck, mild };
+        })();
+        """
+        sp = new_page(browser, new_errors, "?seed=3&mode=free")
+        sp.evaluate(STRENGTH_JS)
+
+        def t43():
+            r = sp.evaluate("""() => {
+              const P = window.__str, out = {};
+              const sim = LTB.createSim({ seed: 1, scenario: 'crowded' });
+              const h0 = sim.hash();
+              const a = LTB.checkStrength(sim, P.conjure);
+              const b = LTB.checkStrength(sim, P.stuck);
+              out.same = sim.hash() === h0;
+              out.a = { verdict: a.verdict, factor: a.factor, gain: a.gain, allowed: a.allowed, early: a.tries[a.tries.length - 1].early, tries: a.tries.map(t => t.gain) };
+              out.b = { verdict: b.verdict, pack: b.pack, tries: b.tries.map(t => t.gain) };
+              out.limit = LTB.STRENGTH_LIMIT;
+              if (a.pack) {
+                const w = LTB.toneDown(P.conjure, a.factor);
+                out.valid = LTB.validatePack(a.pack, sim).ok;
+                out.harm = a.pack.behaviors[1].do[0].by === 5 && JSON.stringify(a.pack.drawback) === JSON.stringify(P.conjure.drawback);
+                out.weaker = a.pack.behaviors[0].do[0].by < 3 && a.pack.behaviors[0].do[1].by > -10;
+                out.same_as_tone = JSON.stringify(w) === JSON.stringify(a.pack);
+                // what the real game ends up with is that weaker version, and only that one
+                const r1 = sim.applyPack(a.pack);
+                out.applied = r1.ok && JSON.stringify(sim.world.behaviors.conjure.do) === JSON.stringify(w.behaviors[0].do)
+                  && JSON.stringify(sim.world.behaviors.conjure.when) === JSON.stringify(w.behaviors[0].when);
+              }
+              return out;
+            }""")
+            a, b = r["a"], r["b"]
+            ok = (r["same"] and a["verdict"] == "toned" and a["factor"] < 1 and a["gain"] <= a["allowed"] and not a["early"]
+                  and r["valid"] and r["harm"] and r["weaker"] and r["same_as_tone"] and r["applied"]
+                  and b["verdict"] == "refused" and b["pack"] is None and len(b["tries"]) == 4)
+            return ok, (f"limit {r['limit']}, conjured food: {a['verdict']} at {a['factor']}, gains by step {[round(x) for x in a['tries']]} "
+                        f"(allowed {a['allowed']:.1f}); un-thinnable one: {b['verdict']} {[round(x) for x in b['tries']]}; real game untouched {r['same']}")
+        check("43 strength: a conjured-food answer is toned down (only the good parts) or refused in a goal run, and the game ends up with exactly what was approved", t43)
+
+        def t44():
+            r = sp.evaluate("""() => {
+              const P = window.__str, out = [];
+              for (const sc of ['crowded', 'hold_on']) {
+                const sim = LTB.createSim({ seed: 1, scenario: sc });
+                const v = LTB.checkStrength(sim, P.mild);
+                out.push({ sc, verdict: v.verdict, gain: v.gain, allowed: v.allowed, unchanged: JSON.stringify(v.pack) === JSON.stringify(P.mild) });
+              }
+              return out;
+            }""")
+            ok = all(x["verdict"] == "ok" and x["unchanged"] for x in r)
+            return ok, "; ".join(f"{x['sc']}: {x['verdict']}, gain {x['gain']:.1f} of {x['allowed']:.1f}" for x in r)
+        check("44 strength: a mild answer (frogs) passes unchanged", t44)
+
+        def t45():
+            r = sp.evaluate("""() => {
+              const P = window.__str;
+              const mk = () => { const s = LTB.createSim({ seed: 4, scenario: 'crowded' }); s.applyPack(LTB.PACKS['unlock fire']); s.tick(500); return s; };
+              const snap = (s) => ({ hash: s.hash(), tick: s.state.tick, logN: s.state.logN, logLen: s.state.log.length, alive: s.state.alive,
+                nextObj: s.state.nextObjId, packs: s.world.packs.length, beh: s.world.behList.length, objs: s.state.objects.length,
+                stats: JSON.stringify(s.state.stats), run: JSON.stringify(s.state.run), vars: JSON.stringify(s.state.vars) });
+              const a = mk(), b = mk();
+              const before = snap(a);
+              const g = LTB.measureGain(a, P.conjure);
+              const c = LTB.checkStrength(a, P.conjure);
+              const after = snap(a);
+              // the next stretch of the real game is the same as in a game that was never measured
+              a.tick(700); b.tick(700);
+              return { before, after, gain: g.gain, verdict: c.verdict, same: JSON.stringify(before) === JSON.stringify(after), later: a.hash() === b.hash() };
+            }""")
+            return (r["same"] and r["later"] and r["gain"] > 0), f"hash, log, tick and random stream unchanged by the measurement {r['same']}, later play identical to an unmeasured game {r['later']}, gain seen {r['gain']:.1f}"
+        check("45 strength: the dry run leaves the real game exactly as it was (state, log, tick and random stream)", t45)
+
+        def t46():
+            import json
+            res = {}
+            pg = new_page(browser, new_errors, "?seed=1&mode=crowded")
+            pg.click('#speeds button[data-speed="0"]')
+            pg.evaluate(STRENGTH_JS)
+            stuck = pg.evaluate("window.__str.stuck")
+            mild = pg.evaluate("window.__str.mild")
+            conj = pg.evaluate("window.__str.conjure")
+            used = lambda: pg.evaluate("LTB.game.sim.state.run.commandsUsed")
+            # refused: no command spent, nothing applied, shown in the panel and the log
+            pg.fill("#cmd", "make food from nothing"); pg.press("#cmd", "Enter")
+            pg.fill("#paste", json.dumps(stuck)); pg.click("#apply")
+            res["shows_checking"] = pg.is_visible("#checking") and "Checking how that plays out" in pg.inner_text("#checking") and pg.is_disabled("#apply")
+            pg.wait_for_function("document.getElementById('checking').hidden")
+            res["refused_no_command"] = used() == 0
+            res["refused_panel"] = pg.is_visible("#ask") and "too good to be true" in pg.inner_text("#errors")
+            res["refused_log"] = "turned that down" in pg.locator("#log li").first.inner_text() and "refusal" in (pg.locator("#log li").first.get_attribute("class") or "")
+            res["refused_not_applied"] = not pg.evaluate("LTB.game.sim.world.packs.some(p => p.id === 'farmy')")
+            res["apply_back"] = pg.is_enabled("#apply")
+            pg.click("#cancel")
+            # toned down, or refused if it cannot be: either way the numbers agree with what the game did
+            pg.fill("#cmd", "make food from nothing"); pg.press("#cmd", "Enter")
+            pg.fill("#paste", json.dumps(conj)); pg.click("#apply")
+            pg.wait_for_function("document.getElementById('checking').hidden")
+            pg.wait_for_timeout(60)
+            txt = pg.locator("#log li").all_inner_texts()
+            toned = any("toned it down" in t for t in txt)
+            if toned:
+                res["toned_ok"] = (used() == 1 and not pg.is_visible("#ask") and pg.evaluate("LTB.game.sim.world.behaviors.conjure.do[0].by") < 3
+                                   and any("toned it down (the good parts at" in t for t in txt))
+            else:
+                res["toned_ok"] = used() == 0 and any("turned that down" in t for t in txt) and pg.is_visible("#ask")
+                pg.click("#cancel")
+            # a mild answer goes straight in, with no remark
+            used0 = used()
+            pg.fill("#cmd", "make it rain little frogs"); pg.press("#cmd", "Enter")
+            pg.fill("#paste", json.dumps(mild)); pg.click("#apply")
+            pg.wait_for_function("document.getElementById('checking').hidden")
+            pg.wait_for_timeout(60)
+            txt2 = pg.locator("#log li").all_inner_texts()
+            res["mild_in"] = used() == used0 + 1 and not any(("toned it down" in t or "turned that down" in t) for t in txt2[:2])
+            pg.close()
+            bad = [k for k, v in res.items() if not v]
+            return not bad, (f"parts failing: {bad}" if bad else "all parts ok") + f" (conjured answer was {'toned down' if toned else 'refused'})"
+        check("46 strength UI: a checking message shows, a refused answer spends no command and says so in the panel and the log, a mild one goes in quietly", t46)
+
+        def t47():
+            import json
+            pg = new_page(browser, new_errors, "?seed=1&mode=free")
+            pg.click('#speeds button[data-speed="0"]')
+            pg.evaluate(STRENGTH_JS)
+            conj = pg.evaluate("window.__str.conjure")
+            pg.fill("#cmd", "make food from nothing"); pg.press("#cmd", "Enter")
+            pg.fill("#paste", json.dumps(conj)); pg.click("#apply")
+            shown = pg.is_visible("#checking")
+            by = pg.evaluate("LTB.game.sim.world.behaviors.conjure.do[0].by")
+            hidden = pg.evaluate("document.getElementById('checking').hidden")
+            txt = " ".join(pg.locator("#log li").all_inner_texts())
+            pg.close()
+            return (not shown and hidden and by == 3 and "toned it down" not in txt and "turned that down" not in txt), f"checking shown {shown}, conjured amount {by}"
+        check("47 strength: free play skips the check and takes the answer as it is", t47)
+
+        def t48():
+            r = sp.evaluate("""() => {
+              const out = [];
+              for (const [sc, seed] of [['crowded', 6], ['hold_on', 6]]) {
+                const sim = LTB.createSim({ seed, scenario: sc });
+                const base = LTB.baselineAlive(sim);
+                let worst = -1e9, who = '';
+                for (const k of LTB.library()) {
+                  const g = LTB.measureGain(sim, LTB.PACKS[k], { baseline: base }).gain;
+                  if (g > worst) { worst = g; who = k; }
+                }
+                out.push({ sc, seed, worst, who });
+              }
+              return { out, allowed: LTB.STRENGTH_LIMIT * LTB.STRENGTH_SLACK };
+            }""")
+            ok = all(x["worst"] <= r["allowed"] for x in r["out"])
+            return ok, f"allowed {r['allowed']:.1f}; best single command: " + "; ".join(f"{x['sc']} seed {x['seed']} {x['who']} {x['worst']:.1f}" for x in r["out"])
+        check("48 strength: no ready-made command measured from a goal start is above the allowed gain (guards the constant)", t48)
 
         errors.extend(ui_errors)
         errors.extend(new_errors)
