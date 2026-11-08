@@ -1,4 +1,4 @@
-"""Headless checks for let-there-be.
+"""Headless checks for say-the-word.
 
 Run with:  python tests/run_tests.py
 Needs Python 3.12 with the playwright package and an installed Edge.
@@ -1200,7 +1200,7 @@ def main():
               return { same: JSON.stringify(listed) === JSON.stringify(keys), listed: listed.length, keys: keys.length,
                        noSpriteField: LTB.AI_INSTRUCTIONS.indexOf('`sprite`') < 0, text: LTB.AI_INSTRUCTIONS };
             }""")
-            notes = ROOT.parent / "let-there-be-context" / "notes" / "rule-language.md"
+            notes = ROOT.parent / "say-the-word-context" / "notes" / "rule-language.md"
             synced = True
             if notes.exists():
                 md = notes.read_text(encoding="utf-8").replace("\r\n", "\n")
